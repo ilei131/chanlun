@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #0f0f23;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #0f0f23;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  background-color: #0f0f23;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+/* Ant Design overrides */
+.ant-card {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.ant-card-head {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.ant-table {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ant-table-thead > tr > th {
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+  color: #a0aec0;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom-color: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ant-btn-primary {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: none;
+}
+
+.ant-btn-primary:hover {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+}
+
+.ant-checkbox-inner {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ant-checkbox-checked .ant-checkbox-inner {
+  background: #6366f1;
+  border-color: #6366f1;
+}
+
+.ant-select-selector {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: #e2e8f0 !important;
+}
+
+.ant-input-number-input-wrap {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ant-input-number-input {
+  color: #e2e8f0;
+}
+
+.ant-tag {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ant-alert {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.ant-statistic-title {
+  color: #a0aec0;
+}
+
+.ant-statistic-content {
+  color: #fff;
+}
+
+.ant-tabs-nav {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.ant-tabs-tab {
+  color: #a0aec0;
+}
+
+.ant-tabs-tab-active {
+  color: #6366f1;
+}
+
+.ant-tabs-ink-bar {
+  background: #6366f1;
+}
