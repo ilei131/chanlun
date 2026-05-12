@@ -1,499 +1,658 @@
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Card, Tabs, Button, Tag, Descriptions, Spin, Empty, Row, Col, Statistic } from 'antd'
-import ReactECharts from 'echarts-for-react'
-import { ArrowLeftOutlined, CaretUpOutlined, CaretDownOutlined, BarChartOutlined, LineChartOutlined } from '@ant-design/icons'
-import { useState, useEffect } from 'react'
-import { stockApi, indicatorsApi, type StockDetailInfo, type TechnicalIndicator } from '@/api'
+import { Card, Tag, Spin, Button, Space, Divider } from 'antd'
+import { Loader2, AlertCircle, TrendingUp, TrendingDown, Target, Zap, ArrowLeft } from 'lucide-react'
+import { stockApi, StockDetail as StockDetailType, BuySignalResponse } from '@/api'
+import KlineChart, { KlineData } from '@/components/KlineChart'
+import MacdChart from '@/components/MacdChart'
+import KdjChart from '@/components/KdjChart'
+
+const debounce = <T extends (...args: any[]) => any>(fn: T, delay: number) => {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  return (...args: Parameters<T>) => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => fn(...args), delay)
+  }
+}
+
+type TabKey = 'signals' | 'zs' | 'bi' | 'fx'
+
+interface MaData {
+  dates: string[]
+  ma5: (number | null)[]
+  ma10: (number | null)[]
+  ma20: (number | null)[]
+  ma60: (number | null)[]
+}
+
+interface ZsItem {
+  start_date: string
+  end_date: string
+  zg: number
+  zd: number
+  height: number
+  mid: number
+}
 
 function StockDetail() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
+  const [detail, setDetail] = useState<StockDetailType | null>(null)
   const [loading, setLoading] = useState(true)
-  const [stockInfo, setStockInfo] = useState<StockDetailInfo | null>(null)
-  const [indicators, setIndicators] = useState<TechnicalIndicator[]>([])
-  const [period, setPeriod] = useState('1d')
+  const [period, setPeriod] = useState('daily')
+  const days = 365
+  const [error, setError] = useState('')
+  const [activeTab, setActiveTab] = useState<TabKey>('signals')
+
+  const fetchStockDetail = useCallback(async (code: string, period: string, days: number) => {
+    console.log(`[fetchStockDetail] 开始请求: code=${code}, period=${period}, days=${days}`)
+    setLoading(true)
+    setError('')
+    try {
+      const response = await stockApi.getDetail(code, period, days)
+      console.log(`[fetchStockDetail] 请求成功: 数据长度=${response.data?.kline_data?.length}`)
+      setDetail(response.data)
+    } catch (error: any) {
+      console.error('获取股票详情失败:', error)
+      setError(error.message || '获取股票详情失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const debouncedFetchStockDetailRef = useRef(debounce(fetchStockDetail, 500))
 
   useEffect(() => {
-    if (!code) return
-    
-    const fetchData = async () => {
-      setLoading(true)
-      try {
-        const [stockRes, indicatorsRes] = await Promise.all([
-          stockApi.getAll(),
-          indicatorsApi.getByStock(1, period),
-        ])
-        
-        const stock = stockRes.data.find(s => s.code === code)
-        if (stock) {
-          setStockInfo(stock)
+    if (code) {
+      console.log(`[useEffect] 触发请求: code=${code}, period=${period}`)
+      debouncedFetchStockDetailRef.current(code, period, days)
+    }
+  }, [code, period, days])
+
+  const getSignalTypeName = (type: string) => {
+    const types: Record<string, string> = {
+      'first_buy': '一买',
+      'second_buy': '二买',
+      'third_buy': '三买',
+      'first_sell': '一卖',
+      'second_sell': '二卖',
+      'third_sell': '三卖',
+    }
+    return types[type] || type
+  }
+
+  
+
+  const calculateMA = (klineData: KlineData[], period: number): (number | null)[] => {
+    const result: (number | null)[] = []
+    for (let i = 0; i < klineData.length; i++) {
+      if (i < period - 1) {
+        result.push(null)
+      } else {
+        let sum = 0
+        for (let j = i - period + 1; j <= i; j++) {
+          sum += klineData[j].close
         }
-        
-        setIndicators(indicatorsRes.data)
-      } catch (error) {
-        console.error('Failed to fetch data:', error)
-      } finally {
-        setLoading(false)
+        result.push(sum / period)
       }
     }
-
-    fetchData()
-  }, [code, period])
-
-  const klineOption = {
-    backgroundColor: '#1a1a2e',
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-      backgroundColor: 'rgba(26, 26, 46, 0.9)',
-      borderColor: '#4a5568',
-      textStyle: { color: '#e2e8f0' },
-    },
-    legend: {
-      data: ['K线', 'MA5', 'MA10', 'MA20'],
-      textStyle: { color: '#e2e8f0' },
-    },
-    grid: [
-      { left: '10%', right: '10%', top: '5%', height: '55%' },
-      { left: '10%', right: '10%', top: '68%', height: '20%' },
-    ],
-    xAxis: [
-      {
-        type: 'category',
-        data: indicators.map((d) => d.trade_date),
-        gridIndex: 0,
-        axisLine: { lineStyle: { color: '#4a5568' } },
-        axisLabel: { color: '#a0aec0' },
-      },
-      {
-        type: 'category',
-        gridIndex: 1,
-        data: indicators.map((d) => d.trade_date),
-        axisLine: { lineStyle: { color: '#4a5568' } },
-        axisLabel: { show: false },
-      },
-    ],
-    yAxis: [
-      {
-        type: 'value',
-        scale: true,
-        gridIndex: 0,
-        splitNumber: 4,
-        axisLine: { lineStyle: { color: '#4a5568' } },
-        axisLabel: { color: '#a0aec0' },
-        splitLine: { lineStyle: { color: '#2d3748', type: 'dashed' } },
-      },
-      {
-        type: 'value',
-        gridIndex: 1,
-        splitNumber: 2,
-        axisLine: { lineStyle: { color: '#4a5568' } },
-        axisLabel: { color: '#a0aec0' },
-        splitLine: { lineStyle: { color: '#2d3748', type: 'dashed' } },
-      },
-    ],
-    dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1], start: 50, end: 100 },
-      { 
-        show: true, 
-        xAxisIndex: [0, 1], 
-        type: 'slider', 
-        bottom: '2%', 
-        start: 50, 
-        end: 100,
-        height: 20,
-        borderColor: '#4a5568',
-        fillerColor: 'rgba(99, 102, 241, 0.2)',
-        handleStyle: { color: '#6366f1' },
-      },
-    ],
-    series: [
-      {
-        name: 'K线',
-        type: 'candlestick',
-        data: indicators.map((d) => [d.close, d.close * 1.02, d.close * 0.98, d.close]),
-        itemStyle: {
-          color: '#10b981',
-          color0: '#ef4444',
-          borderColor: '#10b981',
-          borderColor0: '#ef4444',
-        },
-        markPoint: {
-          data: [
-            { name: '1买', coord: [indicators.length - 5, indicators[indicators.length - 5]?.close], value: '1买', itemStyle: { color: '#10b981' } },
-            { name: '2买', coord: [indicators.length - 3, indicators[indicators.length - 3]?.close], value: '2买', itemStyle: { color: '#3b82f6' } },
-          ],
-        },
-        markLine: {
-          data: [
-            {
-              yAxis: indicators[indicators.length - 1]?.close * 1.05,
-              name: '中枢上沿',
-              lineStyle: { color: '#f59e0b', type: 'dashed' },
-            },
-            {
-              yAxis: indicators[indicators.length - 1]?.close * 0.95,
-              name: '中枢下沿',
-              lineStyle: { color: '#f59e0b', type: 'dashed' },
-            },
-          ],
-        },
-      },
-      {
-        name: 'MA5',
-        type: 'line',
-        data: indicators.map((d) => d.ma5),
-        smooth: true,
-        lineStyle: { width: 1.5, color: '#22d3ee' },
-      },
-      {
-        name: 'MA10',
-        type: 'line',
-        data: indicators.map((d) => d.ma10),
-        smooth: true,
-        lineStyle: { width: 1.5, color: '#fbbf24' },
-      },
-      {
-        name: 'MA20',
-        type: 'line',
-        data: indicators.map((d) => d.ma20),
-        smooth: true,
-        lineStyle: { width: 1.5, color: '#ec4899' },
-      },
-      {
-        name: '成交量',
-        type: 'bar',
-        xAxisIndex: 1,
-        yAxisIndex: 1,
-        data: indicators.map((_, i) => (i % 2 === 0 ? 1000 + Math.random() * 500 : 800 + Math.random() * 400)),
-        itemStyle: {
-          color: (params: { dataIndex: number }) =>
-            params.dataIndex % 2 === 0 ? '#10b981' : '#ef4444',
-        },
-      },
-    ],
+    return result
   }
 
-  const macdOption = {
-    backgroundColor: '#1a1a2e',
-    tooltip: { 
-      trigger: 'axis',
-      backgroundColor: 'rgba(26, 26, 46, 0.9)',
-      borderColor: '#4a5568',
-      textStyle: { color: '#e2e8f0' },
-    },
-    legend: { 
-      data: ['DIF', 'DEA', 'MACD'],
-      textStyle: { color: '#e2e8f0' },
-    },
-    grid: { left: '10%', right: '10%', top: '10%', height: '80%' },
-    xAxis: {
-      type: 'category',
-      data: indicators.map((d) => d.trade_date),
-      axisLine: { lineStyle: { color: '#4a5568' } },
-      axisLabel: { color: '#a0aec0', rotate: 45 },
-    },
-    yAxis: {
-      type: 'value',
-      splitNumber: 4,
-      axisLine: { lineStyle: { color: '#4a5568' } },
-      axisLabel: { color: '#a0aec0' },
-      splitLine: { lineStyle: { color: '#2d3748', type: 'dashed' } },
-    },
-    series: [
-      { name: 'DIF', type: 'line', data: indicators.map((d) => d.macd_dif), lineStyle: { color: '#10b981', width: 2 } },
-      { name: 'DEA', type: 'line', data: indicators.map((d) => d.macd_dea), lineStyle: { color: '#ef4444', width: 2 } },
-      {
-        name: 'MACD',
-        type: 'bar',
-        data: indicators.map((d) => d.macd_hist),
-        itemStyle: {
-          color: (params: { value: number }) => (params.value >= 0 ? '#10b981' : '#ef4444'),
-        },
+  const prepareKlineData = () => {
+    if (!detail?.kline_data.length) return { kline: [], ma: { dates: [], ma5: [], ma10: [], ma20: [], ma60: [] }, zsList: [] }
+
+    const kline: KlineData[] = detail.kline_data.map(k => ({
+      date: k.trade_date,
+      open: k.open,
+      high: k.high,
+      low: k.low,
+      close: k.close,
+      volume: k.volume,
+    }))
+
+    const ma5 = calculateMA(kline, 5)
+    const ma10 = calculateMA(kline, 10)
+    const ma20 = calculateMA(kline, 20)
+    const ma60 = calculateMA(kline, 60)
+
+    const ma: MaData = {
+      dates: kline.map(k => k.date),
+      ma5,
+      ma10,
+      ma20,
+      ma60,
+    }
+
+    const zsList: ZsItem[] = detail.chanlun_signals.zs_list.map(zs => ({
+      start_date: zs.start_date,
+      end_date: zs.end_date,
+      zg: zs.zg,
+      zd: zs.zd,
+      height: zs.zg - zs.zd,
+      mid: (zs.zg + zs.zd) / 2,
+    }))
+
+    return { kline, ma, zsList }
+  }
+
+  const prepareMacdData = () => {
+    if (!detail?.indicators.macd.length) return null
+    return {
+      dates: detail.indicators.macd.map(m => m.trade_date),
+      dif: detail.indicators.macd.map(m => m.dif),
+      dea: detail.indicators.macd.map(m => m.dea),
+      macd: detail.indicators.macd.map(m => m.hist),
+    }
+  }
+
+  const prepareKdjData = () => {
+    if (!detail?.indicators.kdj.length) return null
+    return {
+      dates: detail.indicators.kdj.map(k => k.trade_date),
+      kdj: {
+        k: detail.indicators.kdj.map(k => k.k),
+        d: detail.indicators.kdj.map(k => k.d),
+        j: detail.indicators.kdj.map(k => k.j),
       },
-    ],
+    }
   }
 
-  const kdjOption = {
-    backgroundColor: '#1a1a2e',
-    tooltip: { 
-      trigger: 'axis',
-      backgroundColor: 'rgba(26, 26, 46, 0.9)',
-      borderColor: '#4a5568',
-      textStyle: { color: '#e2e8f0' },
-    },
-    legend: { 
-      data: ['K', 'D', 'J'],
-      textStyle: { color: '#e2e8f0' },
-    },
-    grid: { left: '10%', right: '10%', top: '10%', height: '80%' },
-    xAxis: {
-      type: 'category',
-      data: indicators.map((d) => d.trade_date),
-      axisLine: { lineStyle: { color: '#4a5568' } },
-      axisLabel: { color: '#a0aec0', rotate: 45 },
-    },
-    yAxis: {
-      type: 'value',
-      min: 0,
-      max: 100,
-      splitNumber: 5,
-      axisLine: { lineStyle: { color: '#4a5568' } },
-      axisLabel: { color: '#a0aec0' },
-      splitLine: { lineStyle: { color: '#2d3748', type: 'dashed' } },
-    },
-    series: [
-      { name: 'K', type: 'line', data: indicators.map((d) => d.kdj_k), lineStyle: { color: '#10b981', width: 2 } },
-      { name: 'D', type: 'line', data: indicators.map((d) => d.kdj_d), lineStyle: { color: '#3b82f6', width: 2 } },
-      { name: 'J', type: 'line', data: indicators.map((d) => d.kdj_j), lineStyle: { color: '#fbbf24', width: 2 } },
-    ],
+  const getCurrentFeatures = (): string[] => {
+    const features: string[] = []
+    
+    if (!detail) return features
+
+    if (detail.chanlun_signals.buy_signals.length > 0) {
+      features.push(...detail.chanlun_signals.buy_signals.map(s => getSignalTypeName(s.signal_type)))
+    }
+
+    const lastKdj = detail.indicators.kdj[detail.indicators.kdj.length - 1]
+    if (lastKdj && lastKdj.k > lastKdj.d && lastKdj.k < 30) {
+      features.push('KDJ金叉')
+    }
+
+    const lastMacd = detail.indicators.macd[detail.indicators.macd.length - 1]
+    if (lastMacd && lastMacd.dif > lastMacd.dea && lastMacd.hist > 0) {
+      features.push('MACD金叉')
+    }
+
+    if (detail.chanlun_signals.zs_list.length > 0) {
+      features.push('有中枢')
+    }
+
+    return features.length > 0 ? features : ['暂无特征']
   }
 
-  const bollOption = {
-    backgroundColor: '#1a1a2e',
-    tooltip: { 
-      trigger: 'axis',
-      backgroundColor: 'rgba(26, 26, 46, 0.9)',
-      borderColor: '#4a5568',
-      textStyle: { color: '#e2e8f0' },
-    },
-    legend: { 
-      data: ['收盘价', '布林上轨', '布林中轨', '布林下轨'],
-      textStyle: { color: '#e2e8f0' },
-    },
-    grid: { left: '10%', right: '10%', top: '10%', height: '80%' },
-    xAxis: {
-      type: 'category',
-      data: indicators.map((d) => d.trade_date),
-      axisLine: { lineStyle: { color: '#4a5568' } },
-      axisLabel: { color: '#a0aec0', rotate: 45 },
-    },
-    yAxis: {
-      type: 'value',
-      splitNumber: 4,
-      axisLine: { lineStyle: { color: '#4a5568' } },
-      axisLabel: { color: '#a0aec0' },
-      splitLine: { lineStyle: { color: '#2d3748', type: 'dashed' } },
-    },
-    series: [
-      { name: '收盘价', type: 'line', data: indicators.map((d) => d.close), lineStyle: { color: '#e2e8f0', width: 2 } },
-      { name: '布林上轨', type: 'line', data: indicators.map((d) => d.boll_upper), lineStyle: { color: '#ef4444', type: 'dashed', width: 1.5 } },
-      { name: '布林中轨', type: 'line', data: indicators.map((d) => d.boll_mid), lineStyle: { color: '#10b981', width: 1.5 } },
-      { name: '布林下轨', type: 'line', data: indicators.map((d) => d.boll_lower), lineStyle: { color: '#3b82f6', type: 'dashed', width: 1.5 } },
-    ],
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: 'signals', label: '买卖信号' },
+    { key: 'zs', label: '中枢分析' },
+    { key: 'bi', label: '笔线段' },
+    { key: 'fx', label: '分型' },
+  ]
+
+  const { kline, ma, zsList } = prepareKlineData()
+  const macdData = prepareMacdData()
+  const kdjData = prepareKdjData()
+
+  console.log('=== StockDetail 数据调试 ===')
+  console.log('detail:', detail)
+  console.log('kline长度:', kline.length)
+  console.log('zsList:', zsList)
+  console.log('buy_signals:', detail?.chanlun_signals.buy_signals)
+  console.log('fx_list:', detail?.chanlun_signals.fx_list)
+  console.log('=== StockDetail 数据调试结束 ===')
+
+  const buyPoints = detail?.chanlun_signals.buy_signals
+    .filter(s => s.signal_type.includes('buy'))
+    .map(s => ({
+      date: s.date,
+      type: getSignalTypeName(s.signal_type),
+      price: s.price,
+    })) || []
+
+    const sellPoints = detail?.chanlun_signals.buy_signals
+    .filter(s => s.signal_type.includes('sell'))
+    .map(s => ({
+      date: s.date,
+      type: getSignalTypeName(s.signal_type),
+      price: s.price,
+    })) || []
+
+    const fxList = detail?.chanlun_signals.fx_list.map(fx => ({
+      date: fx.date,
+      price: fx.price,
+      direction: fx.direction,
+    })) || []
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent)' }} />
+        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          正在分析中...
+        </span>
+      </div>
+    )
   }
 
-  const latestIndicators = indicators[indicators.length - 1]
+  if (error) {
+    return (
+      <div
+        className="flex items-center gap-3 p-4 rounded-lg text-sm"
+        style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}
+      >
+        <AlertCircle className="w-5 h-5 shrink-0" />
+        {error}
+      </div>
+    )
+  }
+
+  if (!detail) {
+    return (
+      <div className="text-center py-20">
+        <p style={{ color: 'var(--text-secondary)' }}>无法获取股票数据</p>
+        <button
+          onClick={() => navigate('/')}
+          className="mt-4 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          style={{ background: 'var(--accent)', color: 'white' }}
+        >
+          返回搜索
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button 
-              icon={<ArrowLeftOutlined />} 
-              onClick={() => navigate(-1)}
-              className="bg-white/10 hover:bg-white/20 text-white border border-white/20"
-            >
-              返回
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                <BarChartOutlined />
-                {stockInfo?.code || code} {stockInfo?.name || '股票详情'}
-              </h1>
-              <p className="text-gray-400 text-sm">缠论分析 · {period === '1d' ? '日线' : period === '1w' ? '周线' : '月线'}</p>
-            </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+          个股分析
+        </h1>
+        <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+          基于缠论理论对个股进行深度技术分析
+        </p>
+      </div>
+
+      {/* Search Controls */}
+      <div
+        className="rounded-xl p-4 flex flex-wrap items-center gap-4"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+      >
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          style={{
+            background: 'var(--bg-secondary)',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--border)',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+        >
+          <ArrowLeft className="w-4 h-4" />
+          返回
+        </button>
+
+        {/* Stock name and price */}
+        <div className="flex-1 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+              {detail.name}
+            </span>
+            <span className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>
+              {detail.code}.{detail.market}
+            </span>
           </div>
-          <div className="flex gap-2">
-            {['1d', '1w', '1m'].map((p) => (
-              <Button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-4 ${period === p ? 'bg-indigo-600 text-white' : 'bg-white/10 text-white hover:bg-white/20'}`}
-              >
-                {p === '1d' ? '日线' : p === '1w' ? '周线' : '月线'}
-              </Button>
-            ))}
+          <div className="text-right">
+            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              {detail.current_price?.toFixed(2) || '--'}
+            </p>
+            <p className="text-sm" style={{ color: detail.change_pct !== undefined && detail.change_pct >= 0 ? '#ef4444' : '#22c55e' }}>
+              {detail.change_pct !== undefined ? (
+                <>
+                  {detail.change_pct >= 0 ? <TrendingUp className="inline w-3 h-3" /> : <TrendingDown className="inline w-3 h-3" />}
+                  {detail.change_pct >= 0 ? '+' : ''}{detail.change_pct.toFixed(2)}%
+                </>
+              ) : '--'}
+            </p>
           </div>
         </div>
 
-        <Spin spinning={loading}>
-          {stockInfo && (
-            <>
-              <Row gutter={16}>
-                <Col span={6}>
-                  <Card className="bg-white/5 backdrop-blur-sm border border-white/10">
-                    <Statistic 
-                      title="最新价格" 
-                      value={latestIndicators?.close || 0} 
-                      precision={2}
-                      prefix={<span className="text-2xl">¥</span>}
-                      valueStyle={{ color: '#fff', fontSize: '28px' }}
-                    />
-                  </Card>
-                </Col>
-                <Col span={6}>
-                  <Card className="bg-white/5 backdrop-blur-sm border border-white/10">
-                    <Statistic 
-                      title="涨跌幅" 
-                      value={2.35} 
-                      precision={2}
-                      suffix="%"
-                      prefix={2.35 >= 0 ? <CaretUpOutlined className="text-green-400" /> : <CaretDownOutlined className="text-red-400" />}
-                      valueStyle={{ color: 2.35 >= 0 ? '#10b981' : '#ef4444' }}
-                    />
-                  </Card>
-                </Col>
-                <Col span={6}>
-                  <Card className="bg-white/5 backdrop-blur-sm border border-white/10">
-                    <Statistic 
-                      title="成交量" 
-                      value={2500} 
-                      suffix="万手"
-                      valueStyle={{ color: '#fff' }}
-                    />
-                  </Card>
-                </Col>
-                <Col span={6}>
-                  <Card className="bg-white/5 backdrop-blur-sm border border-white/10">
-                    <Statistic 
-                      title="成交额" 
-                      value={31.5} 
-                      prefix="¥"
-                      suffix="亿"
-                      valueStyle={{ color: '#fff' }}
-                    />
-                  </Card>
-                </Col>
-              </Row>
+        {/* Period selector */}
+        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+          {['daily', 'weekly', 'monthly'].map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className="px-4 py-2 text-sm font-medium transition-colors"
+              style={{
+                background: period === p ? 'var(--accent)' : 'var(--bg-secondary)',
+                color: period === p ? 'white' : 'var(--text-secondary)',
+              }}
+            >
+              {p === 'daily' ? '日K' : p === 'weekly' ? '周K' : '月K'}
+            </button>
+          ))}
+        </div>
+      </div>
 
-              <Card className="bg-white/5 backdrop-blur-sm border border-white/10">
-                <Descriptions bordered column={4} size="small">
-                  <Descriptions.Item label="开盘价" labelStyle={{ color: '#a0aec0' }} contentStyle={{ color: '#fff' }}>
-                    {(latestIndicators?.close * 0.99).toFixed(2)}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="最高价" labelStyle={{ color: '#a0aec0' }} contentStyle={{ color: '#fff' }}>
-                    {(latestIndicators?.close * 1.02).toFixed(2)}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="最低价" labelStyle={{ color: '#a0aec0' }} contentStyle={{ color: '#fff' }}>
-                    {(latestIndicators?.close * 0.98).toFixed(2)}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="换手率" labelStyle={{ color: '#a0aec0' }} contentStyle={{ color: '#fff' }}>
-                    1.2%
-                  </Descriptions.Item>
-                  <Descriptions.Item label="市盈率" labelStyle={{ color: '#a0aec0' }} contentStyle={{ color: '#fff' }}>
-                    10.5
-                  </Descriptions.Item>
-                  <Descriptions.Item label="市净率" labelStyle={{ color: '#a0aec0' }} contentStyle={{ color: '#fff' }}>
-                    1.2
-                  </Descriptions.Item>
-                  <Descriptions.Item label="上市日期" labelStyle={{ color: '#a0aec0' }} contentStyle={{ color: '#fff' }}>
-                    {stockInfo.list_date || '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="市场类型" labelStyle={{ color: '#a0aec0' }} contentStyle={{ color: '#fff' }}>
-                    {stockInfo.market === 'SH' ? '沪市' : '深市'}
-                  </Descriptions.Item>
-                </Descriptions>
-              </Card>
-
-              <Card 
-                className="bg-white/5 backdrop-blur-sm border border-white/10"
-                title={
-                  <div className="flex items-center gap-2 text-white">
-                    <LineChartOutlined className="text-indigo-400" />
-                    K线图（含中枢区间）
-                  </div>
-                }
+      {/* Signal Summary Cards */}
+      {getCurrentFeatures().length > 0 && getCurrentFeatures()[0] !== '暂无特征' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {getCurrentFeatures().map((feature, index) => {
+            const isBuy = feature.includes('买') || feature.includes('金叉')
+            return (
+              <div
+                key={index}
+                className="rounded-xl p-4"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                }}
               >
-                {indicators.length > 0 ? (
-                  <ReactECharts option={klineOption} style={{ height: '500px' }} />
+                <div className="flex items-center gap-2 mb-2">
+                  {isBuy ? (
+                    <TrendingUp className="w-4 h-4" style={{ color: '#ef4444' }} />
+                  ) : (
+                    <TrendingDown className="w-4 h-4" style={{ color: '#22c55e' }} />
+                  )}
+                  <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    当前特征
+                  </span>
+                </div>
+                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {feature}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* K-line Chart */}
+      <div
+        className="rounded-xl overflow-hidden"
+        style={{ background: '#1e2130', border: '1px solid var(--border)' }}
+      >
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid #2a2d3e' }}>
+          <h3 className="text-sm font-semibold text-white">K线图</h3>
+        </div>
+        <KlineChart kline={kline} ma={ma} buyPoints={buyPoints} sellPoints={sellPoints} zsList={zsList} fxList={fxList} />
+      </div>
+
+      {/* MACD Chart */}
+      <div
+        className="rounded-xl overflow-hidden"
+        style={{ background: '#1e2130', border: '1px solid var(--border)' }}
+      >
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid #2a2d3e' }}>
+          <h3 className="text-sm font-semibold text-white">MACD</h3>
+        </div>
+        {macdData && <MacdChart macd={macdData} />}
+      </div>
+
+      {/* KDJ Chart */}
+      <div
+        className="rounded-xl overflow-hidden"
+        style={{ background: '#1e2130', border: '1px solid var(--border)' }}
+      >
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid #2a2d3e' }}>
+          <h3 className="text-sm font-semibold text-white">KDJ</h3>
+        </div>
+        {kdjData && <KdjChart dates={kdjData.dates} kdj={kdjData.kdj} />}
+      </div>
+
+      {/* Tabs Section */}
+      <div
+        className="rounded-xl overflow-hidden"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+      >
+        {/* Tab Headers */}
+        <div className="flex" style={{ borderBottom: '1px solid var(--border)' }}>
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className="px-6 py-3 text-sm font-medium transition-colors relative"
+              style={{
+                color: activeTab === tab.key ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              {tab.label}
+              {activeTab === tab.key && (
+                <div
+                  className="absolute bottom-0 left-0 right-0 h-0.5"
+                  style={{ background: 'var(--accent)' }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-4">
+          {activeTab === 'signals' && (
+            <div className="space-y-4">
+              {/* Buy points */}
+              <div>
+                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: '#ef4444' }}>
+                  <Target className="w-4 h-4" />
+                  买点信号 ({detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('buy')).length})
+                </h4>
+                {detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('buy')).length === 0 ? (
+                  <p className="text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>
+                    暂无买点信号
+                  </p>
                 ) : (
-                  <Empty description="暂无K线数据" className="text-gray-400" />
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          {['日期', '类型', '价格', '原因'].map((h) => (
+                            <th key={h} className="px-4 py-2 text-left text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('buy')).map((signal: BuySignalResponse, index) => (
+                          <tr key={index} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{signal.date}</td>
+                            <td className="px-4 py-2">
+                              <span className="text-xs px-2 py-0.5 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                                {getSignalTypeName(signal.signal_type)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-sm font-mono" style={{ color: '#ef4444' }}>{signal.price.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
-              </Card>
+              </div>
 
-              <Tabs 
-                defaultActiveKey="macd" 
-                className="bg-white/5 backdrop-blur-sm border border-white/10"
-                tabBarStyle={{ color: '#fff' }}
-              >
-                <Tabs.TabPane tab={<span className="text-white">MACD</span>} key="macd">
-                  {indicators.length > 0 ? (
-                    <ReactECharts option={macdOption} style={{ height: '350px' }} />
-                  ) : (
-                    <Empty description="暂无MACD数据" className="text-gray-400" />
-                  )}
-                </Tabs.TabPane>
-                <Tabs.TabPane tab={<span className="text-white">KDJ</span>} key="kdj">
-                  {indicators.length > 0 ? (
-                    <ReactECharts option={kdjOption} style={{ height: '350px' }} />
-                  ) : (
-                    <Empty description="暂无KDJ数据" className="text-gray-400" />
-                  )}
-                </Tabs.TabPane>
-                <Tabs.TabPane tab={<span className="text-white">布林带</span>} key="boll">
-                  {indicators.length > 0 ? (
-                    <ReactECharts option={bollOption} style={{ height: '350px' }} />
-                  ) : (
-                    <Empty description="暂无布林带数据" className="text-gray-400" />
-                  )}
-                </Tabs.TabPane>
-              </Tabs>
-
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Card 
-                    className="bg-white/5 backdrop-blur-sm border border-white/10"
-                    title={<span className="text-white">缠论信号</span>}
-                  >
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <Tag color="green">1买</Tag>
-                          <span className="text-gray-300">2024-01-03</span>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-white">价格: {latestIndicators?.close?.toFixed(2)}</p>
-                          <p className="text-green-400 text-sm">置信度: 85%</p>
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <Tag color="blue">2买</Tag>
-                          <span className="text-gray-300">2024-01-08</span>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-white">价格: {(latestIndicators?.close * 1.05).toFixed(2)}</p>
-                          <p className="text-green-400 text-sm">置信度: 78%</p>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                </Col>
-                <Col span={12}>
-                  <Card 
-                    className="bg-white/5 backdrop-blur-sm border border-white/10"
-                    title={<span className="text-white">中枢区间</span>}
-                  >
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
-                        <div>
-                          <span className="text-white">中枢#1</span>
-                          <p className="text-gray-400 text-sm">2024-01-02 ~ 2024-01-10</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-yellow-400">ZG: {(latestIndicators?.close * 1.05).toFixed(2)}</p>
-                          <p className="text-blue-400">ZD: {(latestIndicators?.close * 0.95).toFixed(2)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                </Col>
-              </Row>
-            </>
+              {/* Sell points */}
+              <div>
+                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: '#22c55e' }}>
+                  <Zap className="w-4 h-4" />
+                  卖点信号 ({detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('sell')).length})
+                </h4>
+                {detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('sell')).length === 0 ? (
+                  <p className="text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>
+                    暂无卖点信号
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          {['日期', '类型', '价格', '原因'].map((h) => (
+                            <th key={h} className="px-4 py-2 text-left text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('sell')).map((signal: BuySignalResponse, index) => (
+                          <tr key={index} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{signal.date}</td>
+                            <td className="px-4 py-2">
+                              <span className="text-xs px-2 py-0.5 rounded" style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>
+                                {getSignalTypeName(signal.signal_type)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-sm font-mono" style={{ color: '#22c55e' }}>{signal.price.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
-        </Spin>
+
+          {activeTab === 'zs' && (
+            <div>
+              <h4 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                中枢列表 ({detail.chanlun_signals.zs_list.length})
+              </h4>
+              {detail.chanlun_signals.zs_list.length === 0 ? (
+                <p className="text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>
+                  暂无中枢数据
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                        {['开始日期', '结束日期', '中枢上沿(ZG)', '中枢下沿(ZD)', '中枢高度', '中枢中轴'].map((h) => (
+                          <th key={h} className="px-4 py-2 text-left text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.chanlun_signals.zs_list.map((zs, index) => (
+                        <tr key={index} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{zs.start_date}</td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{zs.end_date}</td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: '#ef4444' }}>{zs.zg.toFixed(2)}</td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: '#22c55e' }}>{zs.zd.toFixed(2)}</td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: '#f59e0b' }}>{(zs.zg - zs.zd).toFixed(2)}</td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--accent)' }}>{((zs.zg + zs.zd) / 2).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'bi' && (
+            <div>
+              <h4 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                笔列表 ({detail.chanlun_signals.bi_list.length})
+              </h4>
+              {detail.chanlun_signals.bi_list.length === 0 ? (
+                <p className="text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>
+                  暂无笔数据
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                        {['开始日期', '结束日期', '方向', '价格变动', '最高', '最低'].map((h) => (
+                          <th key={h} className="px-4 py-2 text-left text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.chanlun_signals.bi_list.map((bi, index) => (
+                        <tr key={index} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{bi.start_date}</td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{bi.end_date}</td>
+                          <td className="px-4 py-2">
+                            <span
+                              className="text-xs px-2 py-0.5 rounded"
+                              style={{
+                                background: bi.direction === 'up' ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
+                                color: bi.direction === 'up' ? '#ef4444' : '#22c55e',
+                              }}
+                            >
+                              {bi.direction === 'up' ? '上升' : '下降'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: bi.price_change >= 0 ? '#ef4444' : '#22c55e' }}>
+                            {bi.price_change >= 0 ? '+' : ''}{bi.price_change.toFixed(2)}
+                          </td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{bi.high.toFixed(2)}</td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{bi.low.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'fx' && (
+            <div>
+              <h4 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                分型列表 ({detail.chanlun_signals.fx_list.length})
+              </h4>
+              {detail.chanlun_signals.fx_list.length === 0 ? (
+                <p className="text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>
+                  暂无分型数据
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                        {['日期', '类型', '价格', '最高', '最低'].map((h) => (
+                          <th key={h} className="px-4 py-2 text-left text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.chanlun_signals.fx_list.map((fx, index) => (
+                        <tr key={index} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{fx.date}</td>
+                          <td className="px-4 py-2">
+                            <span
+                              className="text-xs px-2 py-0.5 rounded"
+                              style={{
+                                background: fx.direction === 'top' ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
+                                color: fx.direction === 'top' ? '#ef4444' : '#22c55e',
+                              }}
+                            >
+                              {fx.direction === 'top' ? '顶分型' : '底分型'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{fx.price.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

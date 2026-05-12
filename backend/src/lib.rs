@@ -5,7 +5,9 @@ pub mod api;
 pub mod algorithms;
 pub mod config;
 pub mod db;
+pub mod tushare;
 
+use actix_cors::Cors;
 use actix_web::{App, HttpServer};
 use dotenv::dotenv;
 use log::info;
@@ -39,6 +41,10 @@ pub async fn run_server() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(Cors::default()
+                .allow_any_origin()
+                .allow_any_method()
+                .allow_any_header())
             .app_data(actix_web::web::Data::new(pool.clone()))
             .configure(api::init_routes)
     })

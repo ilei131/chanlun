@@ -188,7 +188,7 @@ function Screener() {
       key: 'change_pct',
       width: 100,
       render: (pct: number) => {
-        if (pct === undefined) return '--'
+        if (pct === undefined || pct === null) return '--'
         const color = pct >= 0 ? '#10b981' : '#ef4444'
         return <span style={{ color }}>{pct >= 0 ? '+' : ''}{pct.toFixed(2)}%</span>
       },

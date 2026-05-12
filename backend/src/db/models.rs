@@ -1,5 +1,5 @@
 // src/db/models.rs
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -13,8 +13,8 @@ pub struct Stock {
     pub list_date: Option<NaiveDate>,
     pub delist_date: Option<NaiveDate>,
     pub is_active: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -30,7 +30,7 @@ pub struct Kline {
     pub volume: i64,
     pub amount: Option<f64>,
     pub turnover_rate: Option<f64>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -58,7 +58,7 @@ pub struct TechnicalIndicator {
     pub boll_upper: Option<f64>,
     pub boll_mid: Option<f64>,
     pub boll_lower: Option<f64>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -75,7 +75,7 @@ pub struct CsSignal {
     pub is_current: bool,
     pub is_valid: bool,
     pub confidence: Option<f64>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -100,7 +100,7 @@ pub struct CsFxSignal {
     pub related_bi_id: Option<i64>,
     pub related_zs_id: Option<i64>,
     pub is_current: bool,
-    pub created_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -120,7 +120,7 @@ pub struct CsCrossSignal {
     pub macd_dea_before: Option<f64>,
     pub macd_dea_after: Option<f64>,
     pub is_current: bool,
-    pub created_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Debug, Deserialize)]

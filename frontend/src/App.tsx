@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import { Layout, Menu } from 'antd'
 import { BarChartOutlined, SearchOutlined, FileTextOutlined, SettingOutlined } from '@ant-design/icons'
 import Screener from '@/pages/Screener'
+import StockSearch from '@/pages/StockSearch'
 import StockDetail from '@/pages/StockDetail'
 import Signals from '@/pages/Signals'
 import SettingsPage from '@/pages/Settings'
@@ -56,7 +57,8 @@ function App() {
         <Layout className="p-6">
           <Content className="min-h-[calc(100vh-180px)]">
             <Routes>
-              <Route path="/" element={<Screener />} />
+              <Route path="/" element={<StockSearch />} />
+              <Route path="/search" element={<StockSearch />} />
               <Route path="/screener" element={<Screener />} />
               <Route path="/stock/:code" element={<StockDetail />} />
               <Route path="/signals" element={<Signals />} />

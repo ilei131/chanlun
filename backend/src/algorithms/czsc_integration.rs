@@ -9,7 +9,7 @@ use czsc_core::{
         zs::ZS,
     },
 };
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use std::sync::Arc;
 
 pub struct ChanlunAnalyzer {
@@ -86,6 +86,34 @@ impl ChanlunAnalyzer {
                     }
                 }
             }
+
+            if bi.direction == Direction::Up {
+                let prev_bi = if i > 0 { Some(&bi_list[i - 1]) } else { None };
+                
+                if let Some(pb) = prev_bi {
+                    if pb.direction == Direction::Down {
+                        if let Some(last_zs) = zs_list.last() {
+                            let bi_high = bi.get_high();
+                            let zd = last_zs.zd;
+                            let zg = last_zs.zg;
+                            
+                            if bi_high > zg {
+                                signals.push(BuySignal {
+                                    signal_type: BuySignalType::FirstSell,
+                                    date: bi.end_dt().naive_utc(),
+                                    price: bi_high,
+                                });
+                            } else if zd < bi_high && bi_high < zg {
+                                signals.push(BuySignal {
+                                    signal_type: BuySignalType::SecondSell,
+                                    date: bi.end_dt().naive_utc(),
+                                    price: bi_high,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         signals
@@ -123,6 +151,9 @@ pub enum BuySignalType {
     FirstBuy,
     SecondBuy,
     ThirdBuy,
+    FirstSell,
+    SecondSell,
+    ThirdSell,
 }
 
 #[derive(Debug, Clone)]
@@ -134,7 +165,7 @@ pub struct BuySignal {
 
 pub fn convert_to_raw_bar(
     code: &str,
-    date: DateTime<Utc>,
+    date: NaiveDateTime,
     open: f64,
     high: f64,
     low: f64,
@@ -142,9 +173,10 @@ pub fn convert_to_raw_bar(
     volume: f64,
     id: i32,
 ) -> RawBar {
+    let date_utc: DateTime<Utc> = Utc.from_utc_datetime(&date);
     czsc_core::objects::bar::RawBarBuilder::default()
         .symbol(Arc::from(code))
-        .dt(date)
+        .dt(date_utc)
         .freq(Freq::D)
         .id(id)
         .open(open)

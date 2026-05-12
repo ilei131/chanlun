@@ -127,6 +127,17 @@ export interface KlineData {
   amount: number
 }
 
+export interface SearchResult {
+  stock_id?: number
+  ts_code: string
+  code: string
+  name: string
+  market: string
+  area?: string
+  industry?: string
+  list_date?: string
+}
+
 export interface StockDetailInfo {
   id: number
   code: string
@@ -137,10 +148,97 @@ export interface StockDetailInfo {
   is_active: boolean
 }
 
+export interface StockDetail {
+  ts_code: string
+  code: string
+  name: string
+  market: string
+  current_price?: number
+  change_pct?: number
+  kline_data: KlineResponse[]
+  chanlun_signals: ChanlunSignals
+  indicators: TechnicalIndicators
+}
+
+export interface KlineResponse {
+  trade_date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  amount?: number
+  bi_points: BiPoint[]
+}
+
+export interface BiPoint {
+  position: number
+  direction: string
+  price: number
+  date: string
+}
+
+export interface ChanlunSignals {
+  buy_signals: BuySignalResponse[]
+  zs_list: ZhongShuResponse[]
+  fx_list: FenXingResponse[]
+  bi_list: BiResponse[]
+}
+
+export interface BiResponse {
+  start_date: string
+  end_date: string
+  direction: string
+  price_change: number
+  high: number
+  low: number
+}
+
+export interface BuySignalResponse {
+  signal_type: string
+  date: string
+  price: number
+}
+
+export interface ZhongShuResponse {
+  start_date: string
+  end_date: string
+  zd: number
+  zg: number
+  bi_count: number
+}
+
+export interface FenXingResponse {
+  date: string
+  price: number
+  direction: string
+}
+
+export interface TechnicalIndicators {
+  macd: MacdData[]
+  kdj: KdjData[]
+}
+
+export interface MacdData {
+  trade_date: string
+  dif: number
+  dea: number
+  hist: number
+}
+
+export interface KdjData {
+  trade_date: string
+  k: number
+  d: number
+  j: number
+}
+
 export const stockApi = {
   getAll: () => api.get<Stock[]>('/stocks'),
   getById: (id: number) => api.get<StockDetailInfo>(`/stocks/${id}`),
   getKlines: (id: number, period: string) => api.get<KlineData[]>(`/stocks/${id}/klines/${period}`),
+  search: (keyword: string) => api.get<SearchResult[]>('/stocks/search', { params: { keyword } }),
+  getDetail: (code: string, period?: string, days?: number) => api.post<StockDetail>('/stocks/detail', { code, period, days }),
 }
 
 export const indicatorsApi = {

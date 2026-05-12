@@ -23,7 +23,7 @@ impl SignalDetector {
     pub fn detect(
         &self,
         bi_list: &[BI],
-        xd_list: &[XD],
+        _xd_list: &[XD],
         zs_list: &[ZS],
     ) -> Vec<Signal> {
         let mut signals = Vec::new();
@@ -141,7 +141,7 @@ impl SignalDetector {
         confidence.min(100.0)
     }
 
-    fn detect_sells(&self, zs_list: &[ZS], bi_list: &[BI]) -> Vec<Signal> {
+    fn detect_sells(&self, _zs_list: &[ZS], _bi_list: &[BI]) -> Vec<Signal> {
         vec![]
     }
 }

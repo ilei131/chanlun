@@ -122,18 +122,18 @@ async fn run_screener(
                 .map(|(i, _)| format!("${}", i + 1))
                 .collect();
             
+            let is_current_param = format!("${}", cb.types.len() + 1);
             let query = format!(
-                "SELECT DISTINCT stock_id FROM cs_signals WHERE signal_type IN ({}) AND is_current = $",
-                placeholders.join(", ")
+                "SELECT DISTINCT stock_id FROM cs_signals WHERE signal_type IN ({}) AND is_current = {}",
+                placeholders.join(", "), is_current_param
             );
             
-            let is_current_val = cb.require_current;
-            let mut query_builder = sqlx::query_scalar::<_, i32>(&query)
-                .bind(is_current_val);
+            let mut query_builder = sqlx::query_scalar::<_, i32>(&query);
             
             for t in &cb.types {
                 query_builder = query_builder.bind(t);
             }
+            query_builder = query_builder.bind(cb.require_current);
             
             let results = query_builder.fetch_all(pool.get_ref()).await;
             
@@ -151,9 +151,10 @@ async fn run_screener(
                 .map(|(i, _)| format!("${}", i + 1))
                 .collect();
             
+            let days_within_param = format!("${}", kdj.periods.len() + 1);
             let query = format!(
-                "SELECT DISTINCT stock_id FROM cs_cross_signals WHERE signal_type = 'kdj_gold_cross' AND period IN ({})",
-                placeholders.join(", ")
+                "SELECT DISTINCT stock_id FROM cs_cross_signals WHERE signal_type = 'kdj_gold_cross' AND period IN ({}) AND signal_date >= CURRENT_DATE - INTERVAL '1 day' * {}",
+                placeholders.join(", "), days_within_param
             );
             
             let mut query_builder = sqlx::query_scalar::<_, i32>(&query);
@@ -161,6 +162,7 @@ async fn run_screener(
             for p in &kdj.periods {
                 query_builder = query_builder.bind(p);
             }
+            query_builder = query_builder.bind(kdj.days_within);
             
             let results = query_builder.fetch_all(pool.get_ref()).await;
             
@@ -178,9 +180,10 @@ async fn run_screener(
                 .map(|(i, _)| format!("${}", i + 1))
                 .collect();
             
+            let days_within_param = format!("${}", macd.periods.len() + 1);
             let query = format!(
-                "SELECT DISTINCT stock_id FROM cs_cross_signals WHERE signal_type = 'macd_gold_cross' AND period IN ({})",
-                placeholders.join(", ")
+                "SELECT DISTINCT stock_id FROM cs_cross_signals WHERE signal_type = 'macd_gold_cross' AND period IN ({}) AND signal_date >= CURRENT_DATE - INTERVAL '1 day' * {}",
+                placeholders.join(", "), days_within_param
             );
             
             let mut query_builder = sqlx::query_scalar::<_, i32>(&query);
@@ -188,6 +191,7 @@ async fn run_screener(
             for p in &macd.periods {
                 query_builder = query_builder.bind(p);
             }
+            query_builder = query_builder.bind(macd.days_within);
             
             let results = query_builder.fetch_all(pool.get_ref()).await;
             
@@ -197,7 +201,7 @@ async fn run_screener(
         }
     }
 
-    let mut final_stock_ids: Vec<i32>;
+    let final_stock_ids: Vec<i32>;
     
     if conditions_enabled > 0 && !stock_ids.is_empty() {
         let mut id_counts: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
