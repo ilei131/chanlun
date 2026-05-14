@@ -30,6 +30,10 @@ pub struct StockDetail {
     pub market: String,
     pub current_price: Option<f64>,
     pub change_pct: Option<f64>,
+    pub area: Option<String>,
+    pub industry: Option<String>,
+    pub list_date: Option<String>,
+    pub stock_type: Option<String>,
     pub kline_data: Vec<KlineResponse>,
     pub chanlun_signals: ChanlunSignals,
     pub indicators: TechnicalIndicators,
@@ -140,42 +144,88 @@ async fn search_stocks(
     query: web::Query<SearchQuery>,
 ) -> actix_web::Result<HttpResponse> {
     let keyword = &query.keyword;
-    if keyword.is_empty() {
+    let trimmed_keyword = keyword.trim();
+
+    if trimmed_keyword.is_empty() || trimmed_keyword.len() < 2 {
         return Ok(HttpResponse::Ok().json(Vec::<SearchResult>::new()));
     }
 
     let db_stocks = sqlx::query_as::<_, Stock>(
-        "SELECT id, code, name, market, stock_type, list_date, delist_date, is_active, created_at, updated_at 
-         FROM stocks 
-         WHERE (code ILIKE $1 OR name ILIKE $1) AND is_active = true
-         ORDER BY updated_at DESC
-         LIMIT 50"
+        "SELECT id, code, name, market, stock_type, list_date, delist_date, is_active, created_at, updated_at
+         FROM stocks
+         WHERE code = $1 AND is_active = true
+         LIMIT 1"
     )
-    .bind(format!("%{}%", keyword))
+    .bind(trimmed_keyword)
     .fetch_all(pool.get_ref())
     .await
     .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Query error: {}", e)))?;
 
     if !db_stocks.is_empty() {
-        let results: Vec<SearchResult> = db_stocks.iter().map(|s| {
-            let ts_code = if s.market == "SH" {
-                format!("{}.SH", s.code)
-            } else if s.market == "BJ" {
-                format!("{}.BJ", s.code)
-            } else {
-                format!("{}.SZ", s.code)
-            };
-            SearchResult {
-                stock_id: Some(s.id),
-                ts_code,
-                code: s.code.clone(),
-                name: s.name.clone(),
-                market: s.market.clone(),
-                area: None,
-                industry: None,
-                list_date: s.list_date.map(|d| d.to_string()),
-            }
-        }).collect();
+        let results: Vec<SearchResult> = db_stocks
+            .iter()
+            .map(|s| {
+                let ts_code = if s.market == "SH" {
+                    format!("{}.SH", s.code)
+                } else if s.market == "BJ" {
+                    format!("{}.BJ", s.code)
+                } else {
+                    format!("{}.SZ", s.code)
+                };
+                SearchResult {
+                    stock_id: Some(s.id),
+                    ts_code,
+                    code: s.code.clone(),
+                    name: s.name.clone(),
+                    market: s.market.clone(),
+                    area: None,
+                    industry: None,
+                    list_date: s.list_date.map(|d| d.to_string()),
+                }
+            })
+            .collect();
+        return Ok(HttpResponse::Ok().json(results));
+    }
+
+    let search_pattern = format!("%{}%", trimmed_keyword);
+    let db_stocks = sqlx::query_as::<_, Stock>(
+        "SELECT id, code, name, market, stock_type, list_date, delist_date, is_active, created_at, updated_at
+         FROM stocks
+         WHERE (code ILIKE $1 OR name ILIKE $1) AND is_active = true
+         ORDER BY
+             CASE WHEN code ILIKE $2 THEN 0 WHEN name ILIKE $2 THEN 1 ELSE 2 END,
+             updated_at DESC
+         LIMIT 20"
+    )
+    .bind(&search_pattern)
+    .bind(format!("{}%", trimmed_keyword))
+    .fetch_all(pool.get_ref())
+    .await
+    .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Query error: {}", e)))?;
+
+    if !db_stocks.is_empty() {
+        let results: Vec<SearchResult> = db_stocks
+            .iter()
+            .map(|s| {
+                let ts_code = if s.market == "SH" {
+                    format!("{}.SH", s.code)
+                } else if s.market == "BJ" {
+                    format!("{}.BJ", s.code)
+                } else {
+                    format!("{}.SZ", s.code)
+                };
+                SearchResult {
+                    stock_id: Some(s.id),
+                    ts_code,
+                    code: s.code.clone(),
+                    name: s.name.clone(),
+                    market: s.market.clone(),
+                    area: None,
+                    industry: None,
+                    list_date: s.list_date.map(|d| d.to_string()),
+                }
+            })
+            .collect();
         return Ok(HttpResponse::Ok().json(results));
     }
 
@@ -207,9 +257,7 @@ async fn search_stocks(
             }
             Ok(HttpResponse::Ok().json(results))
         }
-        Err(_) => {
-            Ok(HttpResponse::Ok().json(Vec::<SearchResult>::new()))
-        }
+        Err(_) => Ok(HttpResponse::Ok().json(Vec::<SearchResult>::new())),
     }
 }
 
@@ -229,13 +277,15 @@ async fn get_stock_detail(
     let ts_code = TushareClient::convert_ts_code(code);
 
     let client = TushareClient::new();
-    
+
     let end_date = chrono::Local::now().format("%Y%m%d").to_string();
     let start_date = (chrono::Local::now() - chrono::Duration::days(days as i64))
         .format("%Y%m%d")
         .to_string();
 
-    let kline_result = client.get_kline_data(&ts_code, &start_date, &end_date, period).await;
+    let kline_result = client
+        .get_kline_data(&ts_code, &start_date, &end_date, period)
+        .await;
 
     let kline_data = match kline_result {
         Ok(data) => data,
@@ -254,12 +304,24 @@ async fn get_stock_detail(
 
     let mut sorted_data = kline_data.clone();
     sorted_data.sort_by(|a, b| a.trade_date.cmp(&b.trade_date));
-    
+
     info!("=== K线数据排序 ===");
-    info!("排序前第一条日期: {}", kline_data.first().unwrap().trade_date);
-    info!("排序前最后一条日期: {}", kline_data.last().unwrap().trade_date);
-    info!("排序后第一条日期: {}", sorted_data.first().unwrap().trade_date);
-    info!("排序后最后一条日期: {}", sorted_data.last().unwrap().trade_date);
+    info!(
+        "排序前第一条日期: {}",
+        kline_data.first().unwrap().trade_date
+    );
+    info!(
+        "排序前最后一条日期: {}",
+        kline_data.last().unwrap().trade_date
+    );
+    info!(
+        "排序后第一条日期: {}",
+        sorted_data.first().unwrap().trade_date
+    );
+    info!(
+        "排序后最后一条日期: {}",
+        sorted_data.last().unwrap().trade_date
+    );
     info!("=== K线数据排序结束 ===");
 
     let bars: Vec<RawBar> = sorted_data
@@ -269,25 +331,26 @@ async fn get_stock_detail(
             let date = NaiveDate::parse_from_str(&k.trade_date, "%Y%m%d").unwrap();
             let datetime = NaiveDateTime::new(date, chrono::NaiveTime::default());
             czsc_integration::convert_to_raw_bar(
-                &k.ts_code,
-                datetime,
-                k.open,
-                k.high,
-                k.low,
-                k.close,
-                k.vol,
-                i as i32,
+                &k.ts_code, datetime, k.open, k.high, k.low, k.close, k.vol, i as i32,
             )
         })
         .collect();
 
     info!("=== RawBar 数据 ===");
     if !bars.is_empty() {
-        info!("第一个 bar: symbol={}, dt={}, open={}, high={}, low={}, close={}", 
-            bars[0].symbol, bars[0].dt, bars[0].open, bars[0].high, bars[0].low, bars[0].close);
-        info!("最后一个 bar: symbol={}, dt={}, open={}, high={}, low={}, close={}", 
-            bars.last().unwrap().symbol, bars.last().unwrap().dt, bars.last().unwrap().open, 
-            bars.last().unwrap().high, bars.last().unwrap().low, bars.last().unwrap().close);
+        info!(
+            "第一个 bar: symbol={}, dt={}, open={}, high={}, low={}, close={}",
+            bars[0].symbol, bars[0].dt, bars[0].open, bars[0].high, bars[0].low, bars[0].close
+        );
+        info!(
+            "最后一个 bar: symbol={}, dt={}, open={}, high={}, low={}, close={}",
+            bars.last().unwrap().symbol,
+            bars.last().unwrap().dt,
+            bars.last().unwrap().open,
+            bars.last().unwrap().high,
+            bars.last().unwrap().low,
+            bars.last().unwrap().close
+        );
     }
     info!("bars 数量: {}", bars.len());
     info!("=== RawBar 数据结束 ===");
@@ -305,9 +368,10 @@ async fn get_stock_detail(
     info!("分型数量: {}", fx_list.len());
     info!("信号数量: {}", signals.len());
     signals.iter().for_each(|s| {
-        info!("  信号类型: {:?}, 日期: {}, 价格: {}", 
-            s.signal_type, 
-            s.date.format("%Y%m%d"), 
+        info!(
+            "  信号类型: {:?}, 日期: {}, 价格: {}",
+            s.signal_type,
+            s.date.format("%Y%m%d"),
             s.price
         );
     });
@@ -409,7 +473,8 @@ async fn get_stock_detail(
     let macd_data = calculate_macd(&kline_response);
     let kdj_data = calculate_kdj(&kline_response);
 
-    let name = get_stock_name_from_cache(&ts_code);
+    let (name, area, industry, list_date, stock_type) =
+        fetch_stock_basic_info(&ts_code, &client).await;
 
     let detail = StockDetail {
         ts_code: ts_code.clone(),
@@ -418,6 +483,10 @@ async fn get_stock_detail(
         market: market.to_string(),
         current_price,
         change_pct,
+        area,
+        industry,
+        list_date,
+        stock_type,
         kline_data: kline_response,
         chanlun_signals: ChanlunSignals {
             buy_signals,
@@ -438,29 +507,111 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 lazy_static::lazy_static! {
-    static ref STOCK_NAME_CACHE: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
+    static ref STOCK_INFO_CACHE: Mutex<HashMap<String, (String, Option<String>, Option<String>, Option<String>, Option<String>)>> = Mutex::new(HashMap::new());
+}
+
+async fn fetch_stock_basic_info(
+    ts_code: &str,
+    client: &TushareClient,
+) -> (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    // 先检查缓存
+    {
+        let cache = STOCK_INFO_CACHE.lock().unwrap();
+        if let Some(cached) = cache.get(ts_code) {
+            info!("[fetch_stock_basic_info] 命中缓存, ts_code={}", ts_code);
+            return cached.clone();
+        }
+    }
+
+    info!(
+        "[fetch_stock_basic_info] 缓存未命中，开始获取股票基本信息, ts_code={}",
+        ts_code
+    );
+    let stock_code = ts_code.split('.').next().unwrap_or("");
+    info!("[fetch_stock_basic_info] 解析后的股票代码={}", stock_code);
+
+    let result = match client.search_stocks(stock_code).await {
+        Ok(stocks) => {
+            info!(
+                "[fetch_stock_basic_info] Tushare返回 {} 条股票信息",
+                stocks.len()
+            );
+            if let Some(stock) = stocks.into_iter().find(|s| s.ts_code == ts_code) {
+                info!("[fetch_stock_basic_info] 找到匹配股票: name={}", stock.name);
+                let stock_type = if ts_code.ends_with(".SH") {
+                    Some("沪市A股".to_string())
+                } else if ts_code.ends_with(".SZ") {
+                    Some("深市A股".to_string())
+                } else if ts_code.ends_with(".BJ") {
+                    Some("北交所".to_string())
+                } else {
+                    None
+                };
+                let result = (
+                    stock.name,
+                    stock.area,
+                    stock.industry,
+                    stock.list_date,
+                    stock_type,
+                );
+                // 写入缓存
+                {
+                    let mut cache = STOCK_INFO_CACHE.lock().unwrap();
+                    cache.insert(ts_code.to_string(), result.clone());
+                    info!("[fetch_stock_basic_info] 已写入缓存, ts_code={}", ts_code);
+                }
+                return result;
+            } else {
+                info!(
+                    "[fetch_stock_basic_info] 未找到匹配股票 ts_code={}",
+                    ts_code
+                );
+            }
+        }
+        Err(e) => {
+            info!("[fetch_stock_basic_info] Tushare API 调用失败: {}", e);
+        }
+    };
+
+    let code_only = ts_code.split('.').next().unwrap_or(ts_code);
+    let result = (code_only.to_string(), None, None, None, None);
+    info!(
+        "[fetch_stock_basic_info] 返回默认信息, code_only={}",
+        code_only
+    );
+    result
 }
 
 fn get_stock_name_from_cache(ts_code: &str) -> String {
-    let mut cache = STOCK_NAME_CACHE.lock().unwrap();
-    
-    if let Some(name) = cache.get(ts_code) {
+    let cache = STOCK_INFO_CACHE.lock().unwrap();
+
+    if let Some((name, _, _, _, _)) = cache.get(ts_code) {
         return name.clone();
     }
-    
+
     let code = ts_code.split('.').next().unwrap_or("");
-    let name = format!("{}", code);
-    cache.insert(ts_code.to_string(), name.clone());
-    name
+    format!("{}", code)
 }
 
 async fn get_stock_name(ts_code: &str, _kline_data: &[KlineResponse]) -> String {
     let client = TushareClient::new();
-    match client.search_stocks(ts_code.split('.').next().unwrap_or("")).await {
+    match client
+        .search_stocks(ts_code.split('.').next().unwrap_or(""))
+        .await
+    {
         Ok(stocks) => {
             if let Some(stock) = stocks.into_iter().find(|s| s.ts_code == ts_code) {
-                let mut cache = STOCK_NAME_CACHE.lock().unwrap();
-                cache.insert(ts_code.to_string(), stock.name.clone());
+                let mut cache = STOCK_INFO_CACHE.lock().unwrap();
+                // 更新缓存中的name
+                if let Some(existing) = cache.get_mut(ts_code) {
+                    existing.0 = stock.name.clone();
+                }
                 return stock.name;
             }
         }
@@ -590,7 +741,7 @@ async fn get_stocks(pool: web::Data<PgPool>) -> actix_web::Result<HttpResponse> 
 
 async fn get_stock_by_id(
     pool: web::Data<PgPool>,
-    path: web::Path<i32>
+    path: web::Path<i32>,
 ) -> actix_web::Result<HttpResponse> {
     let stock_id = path.into_inner();
 
@@ -608,7 +759,7 @@ async fn get_stock_by_id(
 
 async fn create_stock(
     pool: web::Data<PgPool>,
-    body: web::Json<NewStock>
+    body: web::Json<NewStock>,
 ) -> actix_web::Result<HttpResponse> {
     let new_stock = body.into_inner();
 
@@ -632,7 +783,7 @@ async fn create_stock(
 
 async fn delete_stock(
     pool: web::Data<PgPool>,
-    path: web::Path<i32>
+    path: web::Path<i32>,
 ) -> actix_web::Result<HttpResponse> {
     let stock_id = path.into_inner();
 
