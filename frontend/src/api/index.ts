@@ -209,7 +209,10 @@ export interface ZhongShuResponse {
     end_date: string
     zd: number
     zg: number
+    gg: number
+    dd: number
     bi_count: number
+    bis: BiResponse[]
 }
 
 export interface FenXingResponse {

@@ -31,13 +31,24 @@ interface BuySellPoint {
     reason?: string;
 }
 
+interface ZsBiItem {
+    start_date: string;
+    end_date: string;
+    direction: string;
+    high: number;
+    low: number;
+}
+
 interface ZsItem {
     start_date: string;
     end_date: string;
     zg: number;
     zd: number;
+    gg: number;
+    dd: number;
     height: number;
     mid: number;
+    bis: ZsBiItem[];
 }
 
 interface FenXingItem {
@@ -213,31 +224,54 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
             candlestickSeries.setMarkers(markers);
         }
 
-        zsList.forEach((zs) => {
-            const upperLine = chart.addLineSeries({
-                color: 'rgba(59,130,246,0.3)',
-                lineWidth: 1,
-                lineStyle: 2,
-                priceLineVisible: false,
-                lastValueVisible: false,
-                crosshairMarkerVisible: false,
-            });
-
-            const lowerLine = chart.addLineSeries({
-                color: 'rgba(59,130,246,0.3)',
-                lineWidth: 1,
-                lineStyle: 2,
-                priceLineVisible: false,
-                lastValueVisible: false,
-                crosshairMarkerVisible: false,
-            });
-
+        // 只绘制最近的一个中枢
+        if (zsList.length > 0) {
+            const zs = zsList[zsList.length - 1];
+            
             // 绘制中枢区域背景
-            const bgColor = zs.zg - zs.zd > 0 ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.1)';
+            const bgColor = 'rgba(59,130,246,0.15)';
             const bgSeries = chart.addHistogramSeries({
                 color: bgColor,
                 priceFormat: { type: 'volume' },
                 priceScaleId: '',
+            });
+
+            // 绘制中枢上沿(ZG)和下沿(ZD)
+            const zgLine = chart.addLineSeries({
+                color: '#3b82f6',
+                lineWidth: 2,
+                lineStyle: 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+            });
+
+            const zdLine = chart.addLineSeries({
+                color: '#3b82f6',
+                lineWidth: 2,
+                lineStyle: 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+            });
+
+            // 绘制中枢最高点(GG)和最低点(DD)
+            const ggLine = chart.addLineSeries({
+                color: '#ef4444',
+                lineWidth: 1,
+                lineStyle: 3,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+            });
+
+            const ddLine = chart.addLineSeries({
+                color: '#22c55e',
+                lineWidth: 1,
+                lineStyle: 3,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
             });
 
             const startIdx = kline.findIndex((k) => k.date >= zs.start_date);
@@ -246,22 +280,63 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
             if (startIdx >= 0 && endIdx >= 0) {
                 const slice = kline.slice(startIdx, endIdx + 1);
                 if (slice.length > 0) {
-                    upperLine.setData(slice.map((k) => ({ time: formatDate(k.date) as Time, value: zs.zg })));
-                    lowerLine.setData(slice.map((k) => ({ time: formatDate(k.date) as Time, value: zs.zd })));
+                    zgLine.setData(slice.map((k) => ({ time: formatDate(k.date) as Time, value: zs.zg })));
+                    zdLine.setData(slice.map((k) => ({ time: formatDate(k.date) as Time, value: zs.zd })));
+                    ggLine.setData(slice.map((k) => ({ time: formatDate(k.date) as Time, value: zs.gg })));
+                    ddLine.setData(slice.map((k) => ({ time: formatDate(k.date) as Time, value: zs.dd })));
 
                     // 填充中枢区域
                     bgSeries.setData(slice.map((k) => ({
                         time: formatDate(k.date) as Time,
-                        value: zs.zg - zs.zd,
+                        value: Math.abs(zs.zg - zs.zd),
                         color: bgColor,
                     })));
                     bgSeries.priceScale().applyOptions({
                         scaleMargins: { top: 0, bottom: 1 },
                         visible: false,
                     });
+
+                    // 绘制中枢内的笔
+                    zs.bis.forEach((bi) => {
+                        const biColor = bi.direction === 'up' ? '#ef4444' : '#22c55e';
+                        const biLine = chart.addLineSeries({
+                            color: biColor,
+                            lineWidth: 2,
+                            lineStyle: 0,
+                            priceLineVisible: false,
+                            lastValueVisible: false,
+                            crosshairMarkerVisible: false,
+                        });
+
+                        const biStartIdx = kline.findIndex((k) => k.date >= bi.start_date);
+                        const biEndIdx = kline.findIndex((k) => k.date >= bi.end_date);
+
+                        if (biStartIdx >= 0 && biEndIdx >= 0) {
+                            // 使用笔数据中的实际高低点
+                            const startPrice = bi.direction === 'up' ? bi.low : bi.high;
+                            const endPrice = bi.direction === 'up' ? bi.high : bi.low;
+
+                            const startTime = formatDate(kline[biStartIdx].date) as Time;
+                            const endTime = formatDate(kline[biEndIdx].date) as Time;
+                            
+                            if (startTime === endTime) {
+                                biLine.setData([{ time: startTime, value: startPrice }]);
+                            } else if (startTime < endTime) {
+                                biLine.setData([
+                                    { time: startTime, value: startPrice },
+                                    { time: endTime, value: endPrice },
+                                ]);
+                            } else {
+                                biLine.setData([
+                                    { time: endTime, value: endPrice },
+                                    { time: startTime, value: startPrice },
+                                ]);
+                            }
+                        }
+                    });
                 }
             }
-        });
+        }
 
         chart.timeScale().fitContent();
 

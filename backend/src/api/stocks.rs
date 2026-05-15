@@ -3,6 +3,7 @@ use actix_web::{web, HttpResponse, Scope};
 use chrono::{NaiveDate, NaiveDateTime};
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::PgPool;
 
 use crate::algorithms::czsc_integration::{self, ChanlunAnalyzer};
@@ -137,6 +138,7 @@ pub fn stocks_scope() -> Scope {
         .route("/{id}", web::get().to(get_stock_by_id))
         .route("", web::post().to(create_stock))
         .route("/{id}", web::delete().to(delete_stock))
+        .route("/sync", web::post().to(sync_stock_basic))
 }
 
 async fn search_stocks(
@@ -227,6 +229,11 @@ async fn search_stocks(
             })
             .collect();
         return Ok(HttpResponse::Ok().json(results));
+    }
+
+    if !can_call_stock_basic() {
+        info!("[search_stocks] stock_basic接口调用频率超限，跳过Tushare查询");
+        return Ok(HttpResponse::Ok().json(Vec::<SearchResult>::new()));
     }
 
     let client = TushareClient::new();
@@ -505,9 +512,33 @@ async fn get_stock_detail(
 
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 lazy_static::lazy_static! {
     static ref STOCK_INFO_CACHE: Mutex<HashMap<String, (String, Option<String>, Option<String>, Option<String>, Option<String>)>> = Mutex::new(HashMap::new());
+    static ref LAST_STOCK_BASIC_CALL: Mutex<u64> = Mutex::new(0);
+}
+
+const STOCK_BASIC_CALL_INTERVAL: u64 = 3600;
+
+fn can_call_stock_basic() -> bool {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let mut last_call = LAST_STOCK_BASIC_CALL.lock().unwrap();
+    if now - *last_call >= STOCK_BASIC_CALL_INTERVAL {
+        *last_call = now;
+        true
+    } else {
+        let remaining = STOCK_BASIC_CALL_INTERVAL - (now - *last_call);
+        info!(
+            "[can_call_stock_basic] stock_basic接口调用频率超限，剩余等待时间: {}秒",
+            remaining
+        );
+        false
+    }
 }
 
 async fn fetch_stock_basic_info(
@@ -535,6 +566,12 @@ async fn fetch_stock_basic_info(
     );
     let stock_code = ts_code.split('.').next().unwrap_or("");
     info!("[fetch_stock_basic_info] 解析后的股票代码={}", stock_code);
+
+    if !can_call_stock_basic() {
+        info!("[fetch_stock_basic_info] stock_basic接口调用频率超限，无法从Tushare获取股票信息");
+        let result = (stock_code.to_string(), None, None, None, None);
+        return result;
+    }
 
     let result = match client.search_stocks(stock_code).await {
         Ok(stocks) => {
@@ -798,4 +835,166 @@ async fn delete_stock(
     }
 
     Ok(HttpResponse::NoContent().finish())
+}
+
+async fn sync_stock_basic(pool: web::Data<PgPool>) -> actix_web::Result<HttpResponse> {
+    info!("[sync_stock_basic] 开始同步股票基础信息");
+
+    if !can_call_stock_basic() {
+        return Err(actix_web::error::ErrorTooManyRequests(
+            "stock_basic接口调用频率超限，请稍后再试",
+        )
+        .into());
+    }
+
+    let client = TushareClient::new();
+    let stocks_result = client.get_all_stocks().await;
+
+    let stocks = match stocks_result {
+        Ok(s) => s,
+        Err(e) => {
+            return Err(actix_web::error::ErrorInternalServerError(format!(
+                "获取股票数据失败: {}",
+                e
+            )))
+            .into();
+        }
+    };
+
+    let total = stocks.len();
+    let mut inserted = 0;
+    let mut updated = 0;
+    let mut errors = 0;
+
+    for stock in stocks {
+        let market = if stock.ts_code.ends_with(".SH") {
+            "SH".to_string()
+        } else if stock.ts_code.ends_with(".BJ") {
+            "BJ".to_string()
+        } else {
+            "SZ".to_string()
+        };
+
+        let list_date = stock
+            .list_date
+            .as_ref()
+            .and_then(|d| NaiveDate::parse_from_str(d, "%Y%m%d").ok());
+
+        let delist_date = stock
+            .delist_date
+            .as_ref()
+            .and_then(|d| NaiveDate::parse_from_str(d, "%Y%m%d").ok());
+
+        let existing_stock =
+            sqlx::query_as::<_, Stock>("SELECT id FROM stocks WHERE code = $1 AND market = $2")
+                .bind(&stock.symbol)
+                .bind(&market)
+                .fetch_optional(pool.get_ref())
+                .await;
+
+        match existing_stock {
+            Ok(Some(existing)) => {
+                let result = sqlx::query(
+                    "UPDATE stocks SET name = $1, stock_type = $2, list_date = $3, delist_date = $4, is_active = $5, updated_at = NOW() WHERE id = $6"
+                )
+                .bind(&stock.name)
+                .bind("A股")
+                .bind(list_date)
+                .bind(delist_date)
+                .bind(delist_date.is_none())
+                .bind(existing.id)
+                .execute(pool.get_ref())
+                .await;
+
+                if result.is_ok() {
+                    updated += 1;
+                } else {
+                    errors += 1;
+                }
+            }
+            Ok(None) => {
+                let result = sqlx::query(
+                    "INSERT INTO stocks (code, name, market, stock_type, list_date, delist_date, is_active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())"
+                )
+                .bind(&stock.symbol)
+                .bind(&stock.name)
+                .bind(&market)
+                .bind("A股")
+                .bind(list_date)
+                .bind(delist_date)
+                .bind(delist_date.is_none())
+                .execute(pool.get_ref())
+                .await;
+
+                if result.is_ok() {
+                    inserted += 1;
+                } else {
+                    errors += 1;
+                }
+            }
+            Err(_) => {
+                errors += 1;
+            }
+        }
+    }
+
+    info!(
+        "[sync_stock_basic] 同步完成: 新增={}, 更新={}, 错误={}",
+        inserted, updated, errors
+    );
+
+    let cache_result = update_stock_info_cache(&pool).await;
+    if let Err(e) = cache_result {
+        info!("[sync_stock_basic] 更新缓存失败: {}", e);
+    }
+
+    Ok(HttpResponse::Ok().json(json!({
+        "inserted": inserted,
+        "updated": updated,
+        "errors": errors,
+        "total": total
+    })))
+}
+
+async fn update_stock_info_cache(pool: &PgPool) -> Result<(), sqlx::Error> {
+    info!("[update_stock_info_cache] 开始更新股票信息缓存");
+
+    let stocks = sqlx::query_as::<_, (String, String, String, String, Option<NaiveDate>)>(
+        "SELECT code, name, market, stock_type, list_date FROM stocks WHERE is_active = true",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut cache = STOCK_INFO_CACHE.lock().unwrap();
+    cache.clear();
+
+    for (code, name, market, stock_type, list_date) in stocks {
+        let ts_code = if market == "SH" {
+            format!("{}.SH", code)
+        } else if market == "BJ" {
+            format!("{}.BJ", code)
+        } else {
+            format!("{}.SZ", code)
+        };
+
+        let stock_type_display = match market.as_str() {
+            "SH" => Some("沪市A股".to_string()),
+            "SZ" => Some("深市A股".to_string()),
+            "BJ" => Some("北交所".to_string()),
+            _ => Some(stock_type),
+        };
+
+        let list_date_str = list_date.map(|d| d.format("%Y%m%d").to_string());
+
+        cache.insert(
+            ts_code,
+            (name, None, None, list_date_str, stock_type_display),
+        );
+    }
+
+    info!(
+        "[update_stock_info_cache] 缓存更新完成，共 {} 条记录",
+        cache.len()
+    );
+    Ok(())
 }

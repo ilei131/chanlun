@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 
-import { Loader2, AlertCircle, TrendingUp, TrendingDown, Target, Zap, ArrowLeft, Building2, MapPin, Calendar, Briefcase } from 'lucide-react'
+import { Loader2, AlertCircle, TrendingUp, TrendingDown, Target, Zap, ArrowLeft, Building2, MapPin, Calendar, Briefcase, Activity } from 'lucide-react'
 import { stockApi, StockDetail as StockDetailType, BuySignalResponse } from '@/api'
 import KlineChart, { KlineData } from '@/components/KlineChart'
 import MacdChart from '@/components/MacdChart'
@@ -32,21 +32,24 @@ interface MaData {
     ma60: (number | null)[]
 }
 
-interface ZsItem {
-    start_date: string
-    end_date: string
-    zg: number
-    zd: number
-    height: number
-    mid: number
-}
-
-interface XdItem {
+interface ZsBiItem {
     start_date: string
     end_date: string
     direction: string
     high: number
     low: number
+}
+
+interface ZsItem {
+    start_date: string
+    end_date: string
+    zg: number
+    zd: number
+    gg: number
+    dd: number
+    height: number
+    mid: number
+    bis: ZsBiItem[]
 }
 
 function StockDetail() {
@@ -58,22 +61,6 @@ function StockDetail() {
     const days = 365
     const [error, setError] = useState('')
     const [activeTab, setActiveTab] = useState<TabKey>('signals')
-
-    const fetchStockDetail = useCallback(async (code: string, period: string, days: number) => {
-        console.log(`[fetchStockDetail] 开始请求: code=${code}, period=${period}, days=${days}`)
-        setLoading(true)
-        setError('')
-        try {
-            const response = await stockApi.getDetail(code, period, days)
-            console.log(`[fetchStockDetail] 请求成功: 数据长度=${response.data?.kline_data?.length}`)
-            setDetail(response.data)
-        } catch (error: any) {
-            console.error('获取股票详情失败:', error)
-            setError(error.message || '获取股票详情失败')
-        } finally {
-            setLoading(false)
-        }
-    }, [])
 
     const debouncedFetchStockDetail = useCallback(
         (code: string, period: string, days: number) => {
@@ -136,9 +123,9 @@ function StockDetail() {
     }
 
     const prepareKlineData = () => {
-        if (!detail?.kline_data.length) return { kline: [], ma: { dates: [], ma5: [], ma10: [], ma20: [], ma60: [] }, zsList: [], xdList: [] }
+        if (!detail?.kline_data.length) return { kline: [], ma: { dates: [], ma5: [], ma10: [], ma20: [], ma60: [] }, zsList: [] }
 
-        const kline: KlineData[] = detail.kline_data.map(k => ({
+        let kline: KlineData[] = detail.kline_data.map(k => ({
             date: k.trade_date,
             open: k.open,
             high: k.high,
@@ -146,6 +133,8 @@ function StockDetail() {
             close: k.close,
             volume: k.volume,
         }))
+
+        kline = kline.sort((a, b) => a.date.localeCompare(b.date))
 
         const ma5 = calculateMA(kline, 5)
         const ma10 = calculateMA(kline, 10)
@@ -160,24 +149,25 @@ function StockDetail() {
             ma60,
         }
 
-        const zsList: ZsItem[] = detail.chanlun_signals.zs_list.map(zs => ({
+        const zsList: ZsItem[] = (detail.chanlun_signals.zs_list || []).map(zs => ({
             start_date: zs.start_date,
             end_date: zs.end_date,
             zg: zs.zg,
             zd: zs.zd,
+            gg: zs.gg,
+            dd: zs.dd,
             height: zs.zg - zs.zd,
             mid: (zs.zg + zs.zd) / 2,
+            bis: (zs.bis || []).map(bi => ({
+                start_date: bi.start_date,
+                end_date: bi.end_date,
+                direction: bi.direction,
+                high: bi.high,
+                low: bi.low,
+            })),
         }))
 
-        const xdList: XdItem[] = detail.chanlun_signals.xd_list?.map(xd => ({
-            start_date: xd.start_date,
-            end_date: xd.end_date,
-            direction: xd.direction,
-            high: xd.high,
-            low: xd.low,
-        })) || []
-
-        return { kline, ma, zsList, xdList }
+        return { kline, ma, zsList }
     }
 
     const prepareMacdData = () => {
@@ -244,6 +234,11 @@ function StockDetail() {
     console.log('=== StockDetail 数据调试 ===')
     console.log('detail:', detail)
     console.log('kline长度:', kline.length)
+    if (kline.length > 0) {
+        console.log('最后一条K线:', kline[kline.length - 1])
+    }
+    console.log('current_price:', detail?.current_price)
+    console.log('change_pct:', detail?.change_pct)
     console.log('zsList:', zsList)
     console.log('buy_signals:', detail?.chanlun_signals.buy_signals)
     console.log('fx_list:', detail?.chanlun_signals.fx_list)
@@ -310,156 +305,209 @@ function StockDetail() {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-4">
             {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                    个股分析
-                </h1>
-                <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    基于缠论理论对个股进行深度技术分析
-                </p>
-            </div>
-
-            {/* Search Controls */}
-            <div
-                className="rounded-xl p-4 flex flex-wrap items-center gap-4"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
-            >
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                        个股分析
+                    </h1>
+                    <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        基于缠论理论对个股进行深度技术分析
+                    </p>
+                </div>
                 <button
                     onClick={() => navigate(-1)}
-                    className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200"
                     style={{
                         background: 'var(--bg-secondary)',
                         color: 'var(--text-secondary)',
                         border: '1px solid var(--border)',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'var(--accent)';
+                        e.currentTarget.style.color = 'white';
+                        e.currentTarget.style.borderColor = 'var(--accent)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'var(--bg-secondary)';
+                        e.currentTarget.style.color = 'var(--text-secondary)';
+                        e.currentTarget.style.borderColor = 'var(--border)';
+                    }}
                 >
                     <ArrowLeft className="w-4 h-4" />
                     返回
                 </button>
-
-                {/* Stock name and price */}
-                <div className="flex-1 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                            {detail.name}
-                        </span>
-                        <span className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>
-                            {detail.code}.{detail.market}
-                        </span>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                            {detail.current_price?.toFixed(2) || '--'}
-                        </p>
-                        <p className="text-sm" style={{ color: detail.change_pct !== undefined && detail.change_pct >= 0 ? '#ef4444' : '#22c55e' }}>
-                            {detail.change_pct !== undefined ? (
-                                <>
-                                    {detail.change_pct >= 0 ? <TrendingUp className="inline w-3 h-3" /> : <TrendingDown className="inline w-3 h-3" />}
-                                    {detail.change_pct >= 0 ? '+' : ''}{detail.change_pct.toFixed(2)}%
-                                </>
-                            ) : '--'}
-                        </p>
-                    </div>
-                </div>
-
-                {/* Period selector */}
-                <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-                    {['daily', 'weekly', 'monthly'].map((p) => (
-                        <button
-                            key={p}
-                            onClick={() => setPeriod(p)}
-                            className="px-4 py-2 text-sm font-medium transition-colors"
-                            style={{
-                                background: period === p ? 'var(--accent)' : 'var(--bg-secondary)',
-                                color: period === p ? 'white' : 'var(--text-secondary)',
-                            }}
-                        >
-                            {p === 'daily' ? '日K' : p === 'weekly' ? '周K' : '月K'}
-                        </button>
-                    ))}
-                </div>
             </div>
 
-            {/* Stock Info Card */}
+            {/* Main Stock Card */}
             <div
-                className="rounded-xl p-4"
+                className="rounded-2xl overflow-hidden"
                 style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
             >
-                <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-                    股票信息
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="flex items-center gap-2">
-                        <Briefcase className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-                        <div>
-                            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>市场类型</p>
-                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {detail.stock_type || '--'}
-                            </p>
+                {/* Stock Header - Name, Code, Price */}
+                <div className="px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                                {detail.name}
+                            </span>
+                            <span
+                                className="px-2 py-0.5 rounded text-xs font-mono"
+                                style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}
+                            >
+                                {detail.code}.{detail.market}
+                            </span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-                        <div>
-                            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>所属行业</p>
-                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {detail.industry || '--'}
+
+                    <div className="flex items-center gap-6">
+                        {/* Price Display */}
+                        <div className="text-right">
+                            <p className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                                {detail.current_price?.toFixed(2) || '--'}
+                            </p>
+                            <p className="text-sm flex items-center justify-end gap-1" style={{ color: detail.change_pct !== undefined && detail.change_pct >= 0 ? '#ef4444' : '#22c55e' }}>
+                                {detail.change_pct !== undefined ? (
+                                    <>
+                                        {detail.change_pct >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                        {detail.change_pct >= 0 ? '+' : ''}{detail.change_pct.toFixed(2)}%
+                                    </>
+                                ) : '--'}
                             </p>
                         </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-                        <div>
-                            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>地区</p>
-                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {detail.area || '--'}
-                            </p>
+
+                        {/* Period selector */}
+                        <div className="flex rounded-lg p-1" style={{ background: 'var(--bg-secondary)' }}>
+                            {['daily', 'weekly', 'monthly'].map((p) => (
+                                <button
+                                    key={p}
+                                    onClick={() => setPeriod(p)}
+                                    className="px-3.5 py-1.5 text-sm font-medium rounded-md transition-all duration-200"
+                                    style={{
+                                        background: period === p ? 'var(--accent)' : 'transparent',
+                                        color: period === p ? 'white' : 'var(--text-secondary)',
+                                    }}
+                                >
+                                    {p === 'daily' ? '日K' : p === 'weekly' ? '周K' : '月K'}
+                                </button>
+                            ))}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-                        <div>
-                            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>上市日期</p>
-                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {detail.list_date ? formatDate(detail.list_date) : '--'}
-                            </p>
+                </div>
+
+                {/* Divider */}
+                <div style={{ borderBottom: '1px solid var(--border)' }} />
+
+                {/* Stock Info Row */}
+                <div className="px-6 py-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="flex items-center gap-3">
+                            <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: 'rgba(59,130,246,0.1)' }}
+                            >
+                                <Briefcase className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+                            </div>
+                            <div>
+                                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>市场类型</p>
+                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                    {detail.stock_type || '--'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: 'rgba(16,185,129,0.1)' }}
+                            >
+                                <Building2 className="w-4 h-4" style={{ color: '#10b981' }} />
+                            </div>
+                            <div>
+                                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>所属行业</p>
+                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                    {detail.industry || '--'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: 'rgba(245,158,11,0.1)' }}
+                            >
+                                <MapPin className="w-4 h-4" style={{ color: '#f59e0b' }} />
+                            </div>
+                            <div>
+                                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>地区</p>
+                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                    {detail.area || '--'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: 'rgba(139,92,246,0.1)' }}
+                            >
+                                <Calendar className="w-4 h-4" style={{ color: '#8b5cf6' }} />
+                            </div>
+                            <div>
+                                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>上市日期</p>
+                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                    {detail.list_date ? formatDate(detail.list_date) : '--'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{ borderBottom: '1px solid var(--border)' }} />
+
+                {/* Current Features Section */}
+                <div className="px-6 py-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <div
+                                className="w-7 h-7 rounded-lg flex items-center justify-center"
+                                style={{ background: 'rgba(236,72,153,0.1)' }}
+                            >
+                                <Activity className="w-3.5 h-3.5" style={{ color: '#ec4899' }} />
+                            </div>
+                            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>当前特征</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 justify-end">
+                            {getCurrentFeatures().length > 0 && getCurrentFeatures()[0] !== '暂无特征' ? (
+                                getCurrentFeatures().map((feature, index) => {
+                                    const isBuy = feature.includes('买') || feature.includes('金叉')
+                                    return (
+                                        <span
+                                            key={index}
+                                            className="px-3 py-1.5 rounded-full text-xs font-medium transition-transform hover:scale-105"
+                                            style={{
+                                                background: isBuy ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
+                                                color: isBuy ? '#ef4444' : '#22c55e',
+                                            }}
+                                        >
+                                            {feature}
+                                        </span>
+                                    )
+                                })
+                            ) : (
+                                <span
+                                    className="px-3 py-1.5 rounded-full text-xs font-medium"
+                                    style={{
+                                        background: 'var(--bg-secondary)',
+                                        color: 'var(--text-secondary)',
+                                    }}
+                                >
+                                    暂无特征
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
             </div>
-
-            {/* Signal Summary Cards */}
-            {getCurrentFeatures().length > 0 && getCurrentFeatures()[0] !== '暂无特征' && (
-                <div
-                    className="rounded-xl p-4"
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
-                >
-                    <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-                        当前特征
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                        {getCurrentFeatures().map((feature, index) => {
-                            const isBuy = feature.includes('买') || feature.includes('金叉')
-                            return (
-                                <span
-                                    key={index}
-                                    className="px-3 py-1.5 rounded-lg text-sm font-medium"
-                                    style={{
-                                        background: isBuy ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
-                                        color: isBuy ? '#ef4444' : '#22c55e',
-                                    }}
-                                >
-                                    {feature}
-                                </span>
-                            )
-                        })}
-                    </div>
-                </div>
-            )}
 
             {/* K-line Chart */}
             <div

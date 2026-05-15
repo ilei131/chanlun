@@ -1,4 +1,5 @@
 // src/tushare/client.rs
+use log::info;
 use reqwest::{Client, Error as ReqwestError};
 use serde::Deserialize;
 use std::env;
@@ -108,10 +109,13 @@ impl TushareClient {
             fields: self.get_fields(api_name),
         };
 
-        let response = self.client.post(url)
+        let response = self
+            .client
+            .post(url)
             .header("Content-Type", "application/json")
             .json(&request_body)
-            .send().await?;
+            .send()
+            .await?;
 
         let status = response.status();
         let body = response.text().await?;
@@ -125,7 +129,9 @@ impl TushareClient {
             return Err(TushareError::ApiError(result.message));
         }
 
-        let data = result.data.ok_or(TushareError::ApiError("No data returned".to_string()))?;
+        let data = result
+            .data
+            .ok_or(TushareError::ApiError("No data returned".to_string()))?;
 
         let field_map: std::collections::HashMap<String, usize> = data
             .fields
@@ -163,12 +169,17 @@ impl TushareClient {
 
         let filtered: Vec<StockBasic> = stocks
             .into_iter()
-            .filter(|s| {
-                s.symbol.contains(keyword) || s.name.contains(keyword)
-            })
+            .filter(|s| s.symbol.contains(keyword) || s.name.contains(keyword))
             .collect();
 
         Ok(filtered)
+    }
+
+    pub async fn get_all_stocks(&self) -> Result<Vec<StockBasic>, TushareError> {
+        let params = vec![("list_status", "L")];
+        let stocks = self.call_api::<StockBasic>("stock_basic", &params).await?;
+        info!("[get_all_stocks] 获取到 {} 条股票数据", stocks.len());
+        Ok(stocks)
     }
 
     pub async fn get_kline_data(
@@ -212,7 +223,10 @@ impl TushareClient {
 }
 
 pub trait FromRow {
-    fn from_row(row: &[serde_json::Value], field_map: &std::collections::HashMap<String, usize>) -> Option<Self>
+    fn from_row(
+        row: &[serde_json::Value],
+        field_map: &std::collections::HashMap<String, usize>,
+    ) -> Option<Self>
     where
         Self: Sized;
 }
@@ -235,21 +249,39 @@ fn json_to_f64(v: &serde_json::Value) -> Option<f64> {
 }
 
 impl FromRow for StockBasic {
-    fn from_row(row: &[serde_json::Value], field_map: &std::collections::HashMap<String, usize>) -> Option<Self> {
+    fn from_row(
+        row: &[serde_json::Value],
+        field_map: &std::collections::HashMap<String, usize>,
+    ) -> Option<Self> {
         Some(StockBasic {
             ts_code: json_to_string(row.get(*field_map.get("ts_code")?)?),
             symbol: json_to_string(row.get(*field_map.get("symbol")?)?),
             name: json_to_string(row.get(*field_map.get("name")?)?),
-            area: field_map.get("area").and_then(|i| row.get(*i)).map(|v| json_to_string(v)),
-            industry: field_map.get("industry").and_then(|i| row.get(*i)).map(|v| json_to_string(v)),
-            list_date: field_map.get("list_date").and_then(|i| row.get(*i)).map(|v| json_to_string(v)),
-            delist_date: field_map.get("delist_date").and_then(|i| row.get(*i)).map(|v| json_to_string(v)),
+            area: field_map
+                .get("area")
+                .and_then(|i| row.get(*i))
+                .map(|v| json_to_string(v)),
+            industry: field_map
+                .get("industry")
+                .and_then(|i| row.get(*i))
+                .map(|v| json_to_string(v)),
+            list_date: field_map
+                .get("list_date")
+                .and_then(|i| row.get(*i))
+                .map(|v| json_to_string(v)),
+            delist_date: field_map
+                .get("delist_date")
+                .and_then(|i| row.get(*i))
+                .map(|v| json_to_string(v)),
         })
     }
 }
 
 impl FromRow for KlineData {
-    fn from_row(row: &[serde_json::Value], field_map: &std::collections::HashMap<String, usize>) -> Option<Self> {
+    fn from_row(
+        row: &[serde_json::Value],
+        field_map: &std::collections::HashMap<String, usize>,
+    ) -> Option<Self> {
         Some(KlineData {
             ts_code: json_to_string(row.get(*field_map.get("ts_code")?)?),
             trade_date: json_to_string(row.get(*field_map.get("trade_date")?)?),
@@ -258,23 +290,50 @@ impl FromRow for KlineData {
             low: json_to_f64(row.get(*field_map.get("low")?)?)?,
             close: json_to_f64(row.get(*field_map.get("close")?)?)?,
             vol: json_to_f64(row.get(*field_map.get("vol")?)?)?,
-            amount: field_map.get("amount").and_then(|i| row.get(*i)).and_then(|v| json_to_f64(v)),
+            amount: field_map
+                .get("amount")
+                .and_then(|i| row.get(*i))
+                .and_then(|v| json_to_f64(v)),
         })
     }
 }
 
 impl FromRow for DailyBasic {
-    fn from_row(row: &[serde_json::Value], field_map: &std::collections::HashMap<String, usize>) -> Option<Self> {
+    fn from_row(
+        row: &[serde_json::Value],
+        field_map: &std::collections::HashMap<String, usize>,
+    ) -> Option<Self> {
         Some(DailyBasic {
             ts_code: json_to_string(row.get(*field_map.get("ts_code")?)?),
             trade_date: json_to_string(row.get(*field_map.get("trade_date")?)?),
-            open: field_map.get("open").and_then(|i| row.get(*i)).and_then(|v| json_to_f64(v)),
-            high: field_map.get("high").and_then(|i| row.get(*i)).and_then(|v| json_to_f64(v)),
-            low: field_map.get("low").and_then(|i| row.get(*i)).and_then(|v| json_to_f64(v)),
-            close: field_map.get("close").and_then(|i| row.get(*i)).and_then(|v| json_to_f64(v)),
-            pre_close: field_map.get("pre_close").and_then(|i| row.get(*i)).and_then(|v| json_to_f64(v)),
-            change: field_map.get("change").and_then(|i| row.get(*i)).and_then(|v| json_to_f64(v)),
-            pct_chg: field_map.get("pct_chg").and_then(|i| row.get(*i)).and_then(|v| json_to_f64(v)),
+            open: field_map
+                .get("open")
+                .and_then(|i| row.get(*i))
+                .and_then(|v| json_to_f64(v)),
+            high: field_map
+                .get("high")
+                .and_then(|i| row.get(*i))
+                .and_then(|v| json_to_f64(v)),
+            low: field_map
+                .get("low")
+                .and_then(|i| row.get(*i))
+                .and_then(|v| json_to_f64(v)),
+            close: field_map
+                .get("close")
+                .and_then(|i| row.get(*i))
+                .and_then(|v| json_to_f64(v)),
+            pre_close: field_map
+                .get("pre_close")
+                .and_then(|i| row.get(*i))
+                .and_then(|v| json_to_f64(v)),
+            change: field_map
+                .get("change")
+                .and_then(|i| row.get(*i))
+                .and_then(|v| json_to_f64(v)),
+            pct_chg: field_map
+                .get("pct_chg")
+                .and_then(|i| row.get(*i))
+                .and_then(|v| json_to_f64(v)),
         })
     }
 }
