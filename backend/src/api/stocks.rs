@@ -91,7 +91,10 @@ pub struct ZhongShuResponse {
     pub end_date: String,
     pub zd: f64,
     pub zg: f64,
+    pub gg: f64,
+    pub dd: f64,
     pub bi_count: usize,
+    pub bis: Vec<BiResponse>,
 }
 
 #[derive(Debug, Serialize)]
@@ -435,12 +438,44 @@ async fn get_stock_detail(
 
     let zs_responses: Vec<ZhongShuResponse> = zs_list
         .into_iter()
-        .map(|zs| ZhongShuResponse {
-            start_date: zs.bis[0].start_dt().format("%Y%m%d").to_string(),
-            end_date: zs.bis.last().unwrap().end_dt().format("%Y%m%d").to_string(),
-            zd: zs.zd,
-            zg: zs.zg,
-            bi_count: zs.bis.len(),
+        .map(|zs| {
+            let bis_responses: Vec<BiResponse> = zs
+                .bis
+                .iter()
+                .map(|bi| {
+                    let direction = if bi.direction == czsc_core::objects::direction::Direction::Up
+                    {
+                        "up".to_string()
+                    } else {
+                        "down".to_string()
+                    };
+                    let (high, low) =
+                        if bi.direction == czsc_core::objects::direction::Direction::Up {
+                            (bi.fx_b.high, bi.fx_a.low)
+                        } else {
+                            (bi.fx_a.high, bi.fx_b.low)
+                        };
+                    BiResponse {
+                        start_date: bi.start_dt().format("%Y%m%d").to_string(),
+                        end_date: bi.end_dt().format("%Y%m%d").to_string(),
+                        direction,
+                        price_change: high - low,
+                        high,
+                        low,
+                    }
+                })
+                .collect();
+
+            ZhongShuResponse {
+                start_date: zs.bis[0].start_dt().format("%Y%m%d").to_string(),
+                end_date: zs.bis.last().unwrap().end_dt().format("%Y%m%d").to_string(),
+                zd: zs.zd,
+                zg: zs.zg,
+                gg: zs.gg,
+                dd: zs.dd,
+                bi_count: zs.bis.len(),
+                bis: bis_responses,
+            }
         })
         .collect();
 
