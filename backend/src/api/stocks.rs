@@ -7,7 +7,7 @@ use serde_json::json;
 use sqlx::PgPool;
 
 use crate::algorithms::czsc_integration::{self, ChanlunAnalyzer};
-use crate::db::models::{NewStock, Stock};
+use crate::db::models::{Kline, NewStock, Stock};
 use crate::tushare::client::TushareClient;
 use czsc_core::objects::bar::RawBar;
 
@@ -277,36 +277,139 @@ pub struct SearchQuery {
 }
 
 async fn get_stock_detail(
-    _pool: web::Data<PgPool>,
+    pool: web::Data<PgPool>,
     body: web::Json<StockDetailRequest>,
 ) -> actix_web::Result<HttpResponse> {
     let code = &body.code;
     let period = body.period.as_deref().unwrap_or("daily");
-    let days = body.days.unwrap_or(365);
+    let days = body.days.unwrap_or(10000);
 
     let ts_code = TushareClient::convert_ts_code(code);
-
-    let client = TushareClient::new();
+    let stock_code = ts_code.split('.').next().unwrap_or(code);
+    let market = if ts_code.ends_with(".SH") {
+        "SH"
+    } else if ts_code.ends_with(".BJ") {
+        "BJ"
+    } else {
+        "SZ"
+    };
 
     let end_date = chrono::Local::now().format("%Y%m%d").to_string();
-    let start_date = (chrono::Local::now() - chrono::Duration::days(days as i64))
+    let default_start_date = (chrono::Local::now() - chrono::Duration::days(days as i64))
         .format("%Y%m%d")
         .to_string();
-
-    let kline_result = client
-        .get_kline_data(&ts_code, &start_date, &end_date, period)
-        .await;
-
-    let kline_data = match kline_result {
-        Ok(data) => data,
+    
+    let mut start_date_str = default_start_date.clone();
+    
+    let (stock, name, list_date, stock_type, mut kline_data) = match sqlx::query_as::<_, Stock>(
+        "SELECT id, code, name, market, stock_type, list_date, delist_date, is_active, created_at, updated_at
+         FROM stocks WHERE code = $1 AND market = $2 AND is_active = true"
+    )
+    .bind(stock_code)
+    .bind(market)
+    .fetch_optional(pool.get_ref())
+    .await
+    {
+        Ok(Some(stock)) => {
+            info!("[get_stock_detail] 从本地数据库找到股票, id={}, name={}", stock.id, stock.name);
+            
+            let stock_name = stock.name.clone();
+            let stock_type_val = stock.stock_type.clone();
+            
+            let list_date_str = if let Some(list_date) = stock.list_date {
+                list_date.format("%Y%m%d").to_string()
+            } else {
+                default_start_date.clone()
+            };
+            
+            let list_date_naive = NaiveDate::parse_from_str(&list_date_str, "%Y%m%d").unwrap();
+            let default_start_naive = NaiveDate::parse_from_str(&default_start_date, "%Y%m%d").unwrap();
+            start_date_str = if list_date_naive > default_start_naive {
+                list_date_str
+            } else {
+                default_start_date.clone()
+            };
+            let start_naive_date = NaiveDate::parse_from_str(&start_date_str, "%Y%m%d").unwrap();
+            let end_naive_date = NaiveDate::parse_from_str(&end_date, "%Y%m%d").unwrap();
+            
+            let klines: Result<Vec<Kline>, sqlx::Error> = sqlx::query_as::<_, Kline>(
+                "SELECT id, stock_id, trade_date, period, open, high, low, close, volume, amount, turnover_rate, created_at
+                 FROM klines WHERE stock_id = $1 AND period = $2 AND trade_date BETWEEN $3 AND $4
+                 ORDER BY trade_date ASC"
+            )
+            .bind(stock.id)
+            .bind(period)
+            .bind(start_naive_date)
+            .bind(end_naive_date)
+            .fetch_all(pool.get_ref())
+            .await;
+            
+            let db_kline_data: Vec<crate::tushare::client::KlineData> = match klines {
+                Ok(klines) => {
+                    info!("[get_stock_detail] 从本地数据库获取到 {} 条 K 线数据", klines.len());
+                    klines.into_iter().map(|k| crate::tushare::client::KlineData {
+                        ts_code: ts_code.clone(),
+                        trade_date: k.trade_date.format("%Y%m%d").to_string(),
+                        open: k.open,
+                        high: k.high,
+                        low: k.low,
+                        close: k.close,
+                        vol: k.volume as f64,
+                        amount: k.amount,
+                    }).collect()
+                }
+                Err(e) => {
+                    info!("[get_stock_detail] 从本地数据库获取 K 线失败: {}", e);
+                    Vec::new()
+                }
+            };
+            
+            let list_date_str = stock.list_date.map(|d| d.format("%Y%m%d").to_string());
+            let stock_type_str = match market {
+                "SH" => Some("沪市A股".to_string()),
+                "SZ" => Some("深市A股".to_string()),
+                "BJ" => Some("北交所".to_string()),
+                _ => Some(stock_type_val),
+            };
+            
+            (Some(stock), stock_name, list_date_str, stock_type_str, db_kline_data)
+        }
+        Ok(None) => {
+            info!("[get_stock_detail] 本地数据库未找到股票，将从 Tushare 获取");
+            let empty_kline: Vec<crate::tushare::client::KlineData> = Vec::new();
+            (None, stock_code.to_string(), None, None, empty_kline)
+        }
         Err(e) => {
-            return Err(actix_web::error::ErrorInternalServerError(format!(
-                "Failed to fetch kline data: {}",
-                e
-            ))
-            .into());
+            info!("[get_stock_detail] 查询本地数据库失败: {}", e);
+            let empty_kline: Vec<crate::tushare::client::KlineData> = Vec::new();
+            (None, stock_code.to_string(), None, None, empty_kline)
         }
     };
+    
+    if kline_data.is_empty() {
+        info!("[get_stock_detail] 本地 K 线数据为空，从 Tushare 获取");
+        let client = TushareClient::new();
+        let kline_result = client
+            .get_kline_data(&ts_code, &start_date_str, &end_date, period)
+            .await;
+
+        kline_data = match kline_result {
+            Ok(data) => {
+                info!("[get_stock_detail] 从 Tushare 获取到 {} 条 K 线数据", data.len());
+                if let Some(s) = &stock {
+                    save_kline_data_to_db(&pool, s.id, period, &data).await;
+                }
+                data
+            }
+            Err(e) => {
+                return Err(actix_web::error::ErrorInternalServerError(format!(
+                    "Failed to fetch kline data: {}",
+                    e
+                ))
+                .into());
+            }
+        };
+    }
 
     if kline_data.is_empty() {
         return Err(actix_web::error::ErrorNotFound("No kline data found").into());
@@ -314,25 +417,6 @@ async fn get_stock_detail(
 
     let mut sorted_data = kline_data.clone();
     sorted_data.sort_by(|a, b| a.trade_date.cmp(&b.trade_date));
-
-    info!("=== K线数据排序 ===");
-    info!(
-        "排序前第一条日期: {}",
-        kline_data.first().unwrap().trade_date
-    );
-    info!(
-        "排序前最后一条日期: {}",
-        kline_data.last().unwrap().trade_date
-    );
-    info!(
-        "排序后第一条日期: {}",
-        sorted_data.first().unwrap().trade_date
-    );
-    info!(
-        "排序后最后一条日期: {}",
-        sorted_data.last().unwrap().trade_date
-    );
-    info!("=== K线数据排序结束 ===");
 
     let bars: Vec<RawBar> = sorted_data
         .iter()
@@ -346,65 +430,22 @@ async fn get_stock_detail(
         })
         .collect();
 
-    info!("=== RawBar 数据 ===");
-    if !bars.is_empty() {
-        info!(
-            "第一个 bar: symbol={}, dt={}, open={}, high={}, low={}, close={}",
-            bars[0].symbol, bars[0].dt, bars[0].open, bars[0].high, bars[0].low, bars[0].close
-        );
-        info!(
-            "最后一个 bar: symbol={}, dt={}, open={}, high={}, low={}, close={}",
-            bars.last().unwrap().symbol,
-            bars.last().unwrap().dt,
-            bars.last().unwrap().open,
-            bars.last().unwrap().high,
-            bars.last().unwrap().low,
-            bars.last().unwrap().close
-        );
-    }
-    info!("bars 数量: {}", bars.len());
-    info!("=== RawBar 数据结束 ===");
-
     let analyzer = ChanlunAnalyzer::new(bars, 50);
     let signals = analyzer.detect_buy_signals();
     let _bi_list = analyzer.get_bi_list();
     let zs_list = analyzer.get_zs_list();
     let fx_list = analyzer.get_fx_list();
 
-    info!("=== 缠论分析结果 ===");
-    info!("K线数据数量: {}", kline_data.len());
-    info!("笔数量: {}", _bi_list.len());
-    info!("中枢数量: {}", zs_list.len());
-    info!("分型数量: {}", fx_list.len());
-    info!("信号数量: {}", signals.len());
-    signals.iter().for_each(|s| {
-        info!(
-            "  信号类型: {:?}, 日期: {}, 价格: {}",
-            s.signal_type,
-            s.date.format("%Y%m%d"),
-            s.price
-        );
-    });
-    info!("=== 缠论分析结束 ===");
-
-    let market = if ts_code.ends_with(".SH") {
-        "SH"
-    } else if ts_code.ends_with(".BJ") {
-        "BJ"
-    } else {
-        "SZ"
-    };
-
-    let current_price = kline_data.last().map(|k| k.close);
-    let change_pct = if kline_data.len() >= 2 {
-        let current = kline_data.last().unwrap().close;
-        let prev = kline_data[kline_data.len() - 2].close;
+    let current_price = sorted_data.last().map(|k| k.close);
+    let change_pct = if sorted_data.len() >= 2 {
+        let current = sorted_data.last().unwrap().close;
+        let prev = sorted_data[sorted_data.len() - 2].close;
         Some(((current - prev) / prev) * 100.0)
     } else {
         None
     };
 
-    let kline_response: Vec<KlineResponse> = kline_data
+    let kline_response: Vec<KlineResponse> = sorted_data
         .into_iter()
         .enumerate()
         .map(|(_i, k)| KlineResponse {
@@ -515,9 +556,6 @@ async fn get_stock_detail(
     let macd_data = calculate_macd(&kline_response);
     let kdj_data = calculate_kdj(&kline_response);
 
-    let (name, area, industry, list_date, stock_type) =
-        fetch_stock_basic_info(&ts_code, &client).await;
-
     let detail = StockDetail {
         ts_code: ts_code.clone(),
         code: code.clone(),
@@ -525,8 +563,8 @@ async fn get_stock_detail(
         market: market.to_string(),
         current_price,
         change_pct,
-        area,
-        industry,
+        area: None,
+        industry: None,
         list_date,
         stock_type,
         kline_data: kline_response,
@@ -543,6 +581,63 @@ async fn get_stock_detail(
     };
 
     Ok(HttpResponse::Ok().json(detail))
+}
+
+async fn save_kline_data_to_db(
+    pool: &PgPool,
+    stock_id: i32,
+    period: &str,
+    kline_data: &[crate::tushare::client::KlineData],
+) {
+    info!("[save_kline_data_to_db] 开始保存 {} 条 K 线数据到数据库", kline_data.len());
+    let mut saved = 0;
+    let mut skipped = 0;
+    
+    for k in kline_data {
+        let trade_date = match NaiveDate::parse_from_str(&k.trade_date, "%Y%m%d") {
+            Ok(d) => d,
+            Err(e) => {
+                info!("[save_kline_data_to_db] 日期解析失败: {}, 跳过", e);
+                continue;
+            }
+        };
+        
+        let existing = sqlx::query(
+            "SELECT id FROM klines WHERE stock_id = $1 AND period = $2 AND trade_date = $3"
+        )
+        .bind(stock_id)
+        .bind(period)
+        .bind(trade_date)
+        .fetch_optional(pool)
+        .await;
+        
+        if let Ok(Some(_)) = existing {
+            skipped += 1;
+            continue;
+        }
+        
+        let result = sqlx::query(
+            "INSERT INTO klines (stock_id, trade_date, period, open, high, low, close, volume, amount) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
+        )
+        .bind(stock_id)
+        .bind(trade_date)
+        .bind(period)
+        .bind(k.open)
+        .bind(k.high)
+        .bind(k.low)
+        .bind(k.close)
+        .bind(k.vol as i64)
+        .bind(k.amount)
+        .execute(pool)
+        .await;
+        
+        if result.is_ok() {
+            saved += 1;
+        }
+    }
+    
+    info!("[save_kline_data_to_db] 保存完成: 新增={}, 跳过={}", saved, skipped);
 }
 
 use std::collections::HashMap;
@@ -745,7 +840,7 @@ fn calculate_kdj(kline_data: &[KlineResponse]) -> Vec<KdjData> {
     let m1 = 3;
     let m2 = 3;
 
-    if kline_data.len() < n + m1 + m2 - 2 {
+    if kline_data.len() < n {
         return result;
     }
 
@@ -785,16 +880,16 @@ fn calculate_kdj(kline_data: &[KlineResponse]) -> Vec<KdjData> {
 
 fn calculate_sma(data: &[f64], period: usize) -> Vec<f64> {
     let mut result = Vec::new();
-    if data.len() < period {
+    if data.is_empty() {
         return result;
     }
 
-    let mut sum: f64 = data[0..period].iter().sum();
-    result.push(sum / period as f64);
+    let mut prev = data[0];
+    result.push(prev);
 
-    for i in period..data.len() {
-        sum = sum - data[i - period] + data[i];
-        result.push(sum / period as f64);
+    for i in 1..data.len() {
+        prev = (prev * (period as f64 - 1.0) + data[i]) / period as f64;
+        result.push(prev);
     }
 
     result

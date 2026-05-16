@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Loader2, AlertCircle, TrendingUp, TrendingDown, Target, Zap, Building2, MapPin, Calendar, Briefcase, Activity, Star, BarChart3, Minus } from 'lucide-react'
-import { stockApi, StockDetail as StockDetailType, BuySignalResponse } from '@/api'
+import { Loader2, AlertCircle, TrendingUp, TrendingDown, Target, Zap, Building2, MapPin, Calendar, Briefcase, BarChart3 } from 'lucide-react'
+import { stockApi, StockDetail as StockDetailType } from '@/api'
 import KlineChart, { KlineData } from '@/components/KlineChart'
 import MacdChart from '@/components/MacdChart'
 import KdjChart from '@/components/KdjChart'
@@ -20,8 +20,6 @@ const formatDate = (dateStr: string): string => {
     }
     return dateStr
 }
-
-type TabKey = 'signals' | 'zs' | 'bi' | 'fx'
 
 interface MaData {
     dates: string[]
@@ -59,7 +57,6 @@ function StockDetail() {
     const [period, setPeriod] = useState('daily')
     const days = 365
     const [error, setError] = useState('')
-    const [activeTab, setActiveTab] = useState<TabKey>('signals')
 
     const debouncedFetchStockDetail = useCallback(
         (code: string, period: string, days: number) => {
@@ -166,22 +163,24 @@ function StockDetail() {
 
     const prepareMacdData = () => {
         if (!detail?.indicators.macd.length) return null
+        const rawData = detail.indicators.macd.sort((a, b) => a.trade_date.localeCompare(b.trade_date))
         return {
-            dates: detail.indicators.macd.map(m => m.trade_date),
-            dif: detail.indicators.macd.map(m => m.dif),
-            dea: detail.indicators.macd.map(m => m.dea),
-            macd: detail.indicators.macd.map(m => m.hist),
+            dates: rawData.map(m => m.trade_date),
+            dif: rawData.map(m => m.dif),
+            dea: rawData.map(m => m.dea),
+            macd: rawData.map(m => m.hist),
         }
     }
 
     const prepareKdjData = () => {
         if (!detail?.indicators.kdj.length) return null
+        const rawData = detail.indicators.kdj.sort((a, b) => a.trade_date.localeCompare(b.trade_date))
         return {
-            dates: detail.indicators.kdj.map(k => k.trade_date),
+            dates: rawData.map(k => k.trade_date),
             kdj: {
-                k: detail.indicators.kdj.map(k => k.k),
-                d: detail.indicators.kdj.map(k => k.d),
-                j: detail.indicators.kdj.map(k => k.j),
+                k: rawData.map(k => typeof k.k === 'number' ? k.k : parseFloat(k.k) || 0),
+                d: rawData.map(k => typeof k.d === 'number' ? k.d : parseFloat(k.d) || 0),
+                j: rawData.map(k => typeof k.j === 'number' ? k.j : parseFloat(k.j) || 0),
             },
         }
     }
@@ -212,13 +211,6 @@ function StockDetail() {
 
         return features.length > 0 ? features : ['暂无特征']
     }
-
-    const tabs: { key: TabKey; label: string; icon: typeof Target }[] = [
-        { key: 'signals', label: '买卖信号', icon: Target },
-        { key: 'zs', label: '中枢分析', icon: Minus },
-        { key: 'bi', label: '笔线段', icon: TrendingUp },
-        { key: 'fx', label: '分型', icon: Star },
-    ]
 
     const { kline, ma, zsList } = prepareKlineData()
     const macdData = prepareMacdData()
@@ -340,9 +332,34 @@ function StockDetail() {
                                         {detail.code}.{detail.market}
                                     </span>
                                 </div>
-                                <p className="text-slate-400 text-sm">
+                                <p className="text-slate-400 text-sm mb-3">
                                     基于缠论理论的专业技术分析
                                 </p>
+                                {/* Current Features */}
+                                <div className="flex flex-wrap gap-2">
+                                    {getCurrentFeatures().length > 0 && getCurrentFeatures()[0] !== '暂无特征' ? (
+                                        getCurrentFeatures().map((feature, index) => {
+                                            const isBuy = feature.includes('买') || feature.includes('金叉')
+                                            return (
+                                                <span
+                                                    key={index}
+                                                    className="px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300 hover:scale-105"
+                                                    style={{
+                                                        background: isBuy ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
+                                                        color: isBuy ? '#ef4444' : '#22c55e',
+                                                        border: `1px solid ${isBuy ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`,
+                                                    }}
+                                                >
+                                                    {feature}
+                                                </span>
+                                            )
+                                        })
+                                    ) : (
+                                        <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-slate-700/50 text-slate-400">
+                                            暂无特征
+                                        </span>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Price Display */}
@@ -358,26 +375,6 @@ function StockDetail() {
                                         </>
                                     ) : '--'}
                                 </p>
-                            </div>
-                        </div>
-
-                        {/* Period Selector */}
-                        <div className="flex items-center gap-4 mt-6 pt-6 border-t border-slate-700/50">
-                            <span className="text-sm text-slate-400">周期:</span>
-                            <div className="flex bg-slate-800/60 backdrop-blur rounded-full p-1">
-                                {['daily', 'weekly', 'monthly'].map((p) => (
-                                    <button
-                                        key={p}
-                                        onClick={() => setPeriod(p)}
-                                        className="px-4 py-2 text-sm font-medium rounded-full transition-all duration-300"
-                                        style={{
-                                            background: period === p ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'transparent',
-                                            color: period === p ? 'white' : 'var(--text-secondary)',
-                                        }}
-                                    >
-                                        {p === 'daily' ? '日K' : p === 'weekly' ? '周K' : '月K'}
-                                    </button>
-                                ))}
                             </div>
                         </div>
                     </div>
@@ -438,44 +435,30 @@ function StockDetail() {
                     </div>
                 </div>
 
-                {/* Current Features Banner */}
-                <div className="bg-gradient-to-r from-purple-900/30 to-pink-900/30 backdrop-blur-xl rounded-2xl p-4 border border-purple-500/20">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                            <Activity className="w-5 h-5 text-pink-400" />
-                            <span className="text-sm font-semibold text-white">当前特征</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {getCurrentFeatures().length > 0 && getCurrentFeatures()[0] !== '暂无特征' ? (
-                                getCurrentFeatures().map((feature, index) => {
-                                    const isBuy = feature.includes('买') || feature.includes('金叉')
-                                    return (
-                                        <span
-                                            key={index}
-                                            className="px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300 hover:scale-105"
-                                            style={{
-                                                background: isBuy ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
-                                                color: isBuy ? '#ef4444' : '#22c55e',
-                                                border: `1px solid ${isBuy ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`,
-                                            }}
-                                        >
-                                            {feature}
-                                        </span>
-                                    )
-                                })
-                            ) : (
-                                <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-slate-700/50 text-slate-400">
-                                    暂无特征
-                                </span>
-                            )}
-                        </div>
+                {/* Period Selector */}
+                <div className="flex items-center gap-4 bg-slate-800/60 backdrop-blur-xl rounded-2xl p-4 border border-slate-700/50">
+                    <span className="text-sm text-slate-400">周期:</span>
+                    <div className="flex bg-slate-900/60 backdrop-blur rounded-full p-1">
+                        {['daily', 'weekly', 'monthly'].map((p) => (
+                            <button
+                                key={p}
+                                onClick={() => setPeriod(p)}
+                                className="px-4 py-2 text-sm font-medium rounded-full transition-all duration-300"
+                                style={{
+                                    background: period === p ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'transparent',
+                                    color: period === p ? 'white' : 'var(--text-secondary)',
+                                }}
+                            >
+                                {p === 'daily' ? '日K' : p === 'weekly' ? '周K' : '月K'}
+                            </button>
+                        ))}
                     </div>
                 </div>
 
                 {/* Charts Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                     {/* K-line Chart */}
-                    <div className="lg:col-span-2 bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 overflow-hidden">
+                    <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-700/50">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-base font-semibold text-white flex items-center gap-2">
@@ -528,236 +511,10 @@ function StockDetail() {
                     </div>
                 </div>
 
-                {/* Analysis Tabs */}
-                <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 overflow-hidden">
-                    {/* Tab Headers */}
-                    <div className="flex border-b border-slate-700/50">
-                        {tabs.map((tab) => (
-                            <button
-                                key={tab.key}
-                                onClick={() => setActiveTab(tab.key)}
-                                className="flex-1 flex items-center justify-center gap-2 px-6 py-4 text-sm font-medium transition-all duration-300 relative"
-                                style={{
-                                    color: activeTab === tab.key ? '#c084fc' : '#9ca3af',
-                                    background: activeTab === tab.key ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
-                                }}
-                            >
-                                <tab.icon className="w-4 h-4" />
-                                {tab.label}
-                                {activeTab === tab.key && (
-                                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full" />
-                                )}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Tab Content */}
-                    <div className="p-6">
-                        {activeTab === 'signals' && (
-                            <div className="space-y-6">
-                                {/* Buy signals */}
-                                <div className="bg-red-500/5 rounded-xl p-4 border border-red-500/10">
-                                    <h4 className="text-sm font-semibold text-red-400 mb-4 flex items-center gap-2">
-                                        <Target className="w-4 h-4" />
-                                        买点信号 ({detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('buy')).length})
-                                    </h4>
-                                    {detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('buy')).length === 0 ? (
-                                        <p className="text-sm text-slate-400 text-center py-4">暂无买点信号</p>
-                                    ) : (
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full">
-                                                <thead>
-                                                    <tr className="border-b border-slate-700/50">
-                                                        {['日期', '类型', '价格'].map((h) => (
-                                                            <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-400">
-                                                                {h}
-                                                            </th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('buy')).map((signal: BuySignalResponse, index) => (
-                                                        <tr key={index} className="border-b border-slate-700/30 hover:bg-slate-700/30 transition-colors">
-                                                            <td className="px-4 py-3 text-sm font-mono text-white">{signal.date}</td>
-                                                            <td className="px-4 py-3">
-                                                                <span className="text-xs px-2.5 py-1 rounded-full bg-red-500/20 text-red-400">
-                                                                    {getSignalTypeName(signal.signal_type)}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-4 py-3 text-sm font-mono text-red-400">{signal.price.toFixed(2)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Sell signals */}
-                                <div className="bg-green-500/5 rounded-xl p-4 border border-green-500/10">
-                                    <h4 className="text-sm font-semibold text-green-400 mb-4 flex items-center gap-2">
-                                        <Zap className="w-4 h-4" />
-                                        卖点信号 ({detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('sell')).length})
-                                    </h4>
-                                    {detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('sell')).length === 0 ? (
-                                        <p className="text-sm text-slate-400 text-center py-4">暂无卖点信号</p>
-                                    ) : (
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full">
-                                                <thead>
-                                                    <tr className="border-b border-slate-700/50">
-                                                        {['日期', '类型', '价格'].map((h) => (
-                                                            <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-400">
-                                                                {h}
-                                                            </th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {detail.chanlun_signals.buy_signals.filter(s => s.signal_type.includes('sell')).map((signal: BuySignalResponse, index) => (
-                                                        <tr key={index} className="border-b border-slate-700/30 hover:bg-slate-700/30 transition-colors">
-                                                            <td className="px-4 py-3 text-sm font-mono text-white">{signal.date}</td>
-                                                            <td className="px-4 py-3">
-                                                                <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-400">
-                                                                    {getSignalTypeName(signal.signal_type)}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-4 py-3 text-sm font-mono text-green-400">{signal.price.toFixed(2)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'zs' && (
-                            <div>
-                                <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-                                    <Minus className="w-4 h-4 text-purple-400" />
-                                    中枢列表 ({detail.chanlun_signals.zs_list.length})
-                                </h4>
-                                {detail.chanlun_signals.zs_list.length === 0 ? (
-                                    <p className="text-sm text-slate-400 text-center py-8">暂无中枢数据</p>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full">
-                                            <thead>
-                                                <tr className="border-b border-slate-700/50">
-                                                    {['开始日期', '结束日期', '中枢上沿(ZG)', '中枢下沿(ZD)', '中枢高度', '中枢中轴'].map((h) => (
-                                                        <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-400">
-                                                            {h}
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {detail.chanlun_signals.zs_list.map((zs, index) => (
-                                                    <tr key={index} className="border-b border-slate-700/30 hover:bg-slate-700/30 transition-colors">
-                                                        <td className="px-4 py-3 text-sm font-mono text-white">{zs.start_date}</td>
-                                                        <td className="px-4 py-3 text-sm font-mono text-white">{zs.end_date}</td>
-                                                        <td className="px-4 py-3 text-sm font-mono text-red-400">{zs.zg.toFixed(2)}</td>
-                                                        <td className="px-4 py-3 text-sm font-mono text-green-400">{zs.zd.toFixed(2)}</td>
-                                                        <td className="px-4 py-3 text-sm font-mono text-yellow-400">{(zs.zg - zs.zd).toFixed(2)}</td>
-                                                        <td className="px-4 py-3 text-sm font-mono text-purple-400">{((zs.zg + zs.zd) / 2).toFixed(2)}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {activeTab === 'bi' && (
-                            <div>
-                                <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-                                    <TrendingUp className="w-4 h-4 text-blue-400" />
-                                    笔列表 ({detail.chanlun_signals.bi_list.length})
-                                </h4>
-                                {detail.chanlun_signals.bi_list.length === 0 ? (
-                                    <p className="text-sm text-slate-400 text-center py-8">暂无笔数据</p>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full">
-                                            <thead>
-                                                <tr className="border-b border-slate-700/50">
-                                                    {['开始日期', '结束日期', '方向', '价格变动', '最高', '最低'].map((h) => (
-                                                        <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-400">
-                                                            {h}
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {detail.chanlun_signals.bi_list.map((bi, index) => (
-                                                    <tr key={index} className="border-b border-slate-700/30 hover:bg-slate-700/30 transition-colors">
-                                                        <td className="px-4 py-3 text-sm font-mono text-white">{bi.start_date}</td>
-                                                        <td className="px-4 py-3 text-sm font-mono text-white">{bi.end_date}</td>
-                                                        <td className="px-4 py-3">
-                                                            <span className={`text-xs px-2.5 py-1 rounded-full ${bi.direction === 'up' ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
-                                                                {bi.direction === 'up' ? '上升' : '下降'}
-                                                            </span>
-                                                        </td>
-                                                        <td className={`px-4 py-3 text-sm font-mono ${bi.price_change >= 0 ? 'text-red-400' : 'text-green-400'}`}>
-                                                            {bi.price_change >= 0 ? '+' : ''}{bi.price_change.toFixed(2)}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-sm font-mono text-white">{bi.high.toFixed(2)}</td>
-                                                        <td className="px-4 py-3 text-sm font-mono text-white">{bi.low.toFixed(2)}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {activeTab === 'fx' && (
-                            <div>
-                                <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-                                    <Star className="w-4 h-4 text-yellow-400" />
-                                    分型列表 ({detail.chanlun_signals.fx_list.length})
-                                </h4>
-                                {detail.chanlun_signals.fx_list.length === 0 ? (
-                                    <p className="text-sm text-slate-400 text-center py-8">暂无分型数据</p>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full">
-                                            <thead>
-                                                <tr className="border-b border-slate-700/50">
-                                                    {['日期', '类型', '价格'].map((h) => (
-                                                        <th key={h} className="px-4 py-2 text-left text-xs font-medium text-slate-400">
-                                                            {h}
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {detail.chanlun_signals.fx_list.map((fx, index) => (
-                                                    <tr key={index} className="border-b border-slate-700/30 hover:bg-slate-700/30 transition-colors">
-                                                        <td className="px-4 py-3 text-sm font-mono text-white">{fx.date}</td>
-                                                        <td className="px-4 py-3">
-                                                            <span className={`text-xs px-2.5 py-1 rounded-full ${fx.direction === 'top' ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
-                                                                {fx.direction === 'top' ? '顶分型' : '底分型'}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-sm font-mono text-white">{fx.price.toFixed(2)}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
             </main>
 
             {/* Footer */}
+
             <footer className="border-t border-slate-800 mt-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                     <div className="text-center text-sm text-slate-500">
