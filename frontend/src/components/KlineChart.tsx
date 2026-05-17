@@ -340,17 +340,15 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
 
         chart.timeScale().fitContent();
 
-        let prevRightEdge: number = candleData.length - 1;
+        const lastBarIndex = candleData.length - 1;
         let prevBarCount: number | null = null;
         let skipNext = false;
+        let isPinnedToRight = true;
 
         const initialRange = chart.timeScale().getVisibleLogicalRange();
         if (initialRange) {
             prevBarCount = initialRange.to - initialRange.from;
-            prevRightEdge = initialRange.to;
         }
-
-        const lastBarIndex = candleData.length - 1;
 
         chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
             if (!range) return;
@@ -362,23 +360,35 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
 
             const barCount = range.to - range.from;
 
+            if (range.to < lastBarIndex - 0.5) {
+                isPinnedToRight = false;
+            }
+
             if (prevBarCount !== null && Math.abs(barCount - prevBarCount) > 0.5) {
                 skipNext = true;
-                chart.timeScale().setVisibleLogicalRange({
-                    from: prevRightEdge - barCount,
-                    to: prevRightEdge,
-                });
-                prevBarCount = barCount;
-            } else {
-                if (range.to > lastBarIndex + 0.5) {
-                    skipNext = true;
+                if (isPinnedToRight) {
                     chart.timeScale().setVisibleLogicalRange({
                         from: lastBarIndex - barCount,
                         to: lastBarIndex,
                     });
-                    prevRightEdge = lastBarIndex;
                 } else {
-                    prevRightEdge = range.to;
+                    const rightEdge = Math.min(range.to, lastBarIndex);
+                    chart.timeScale().setVisibleLogicalRange({
+                        from: rightEdge - barCount,
+                        to: rightEdge,
+                    });
+                }
+                prevBarCount = barCount;
+            } else {
+                if (range.to >= lastBarIndex - 0.5) {
+                    isPinnedToRight = true;
+                    if (range.to > lastBarIndex + 0.5) {
+                        skipNext = true;
+                        chart.timeScale().setVisibleLogicalRange({
+                            from: lastBarIndex - barCount,
+                            to: lastBarIndex,
+                        });
+                    }
                 }
                 prevBarCount = barCount;
             }
