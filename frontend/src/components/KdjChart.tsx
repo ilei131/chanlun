@@ -19,9 +19,10 @@ interface KdjData {
 interface KdjChartProps {
   dates: string[];
   kdj: KdjData;
+  visibleDateRange?: { start: string; end: string } | null;
 }
 
-export default function KdjChart({ dates, kdj }: KdjChartProps) {
+export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
@@ -41,12 +42,40 @@ export default function KdjChart({ dates, kdj }: KdjChartProps) {
 
   if (!dates || dates.length === 0 || !kdj) return null;
 
-  const maxPoints = 120;
-  const startIdx = Math.max(0, dates.length - maxPoints);
-  const displayDates = dates.slice(startIdx);
-  const displayK = kdj.k.slice(startIdx);
-  const displayD = kdj.d.slice(startIdx);
-  const displayJ = kdj.j.slice(startIdx);
+  let displayDates: string[];
+  let displayK: number[];
+  let displayD: number[];
+  let displayJ: number[];
+
+  if (visibleDateRange) {
+    const startDate = visibleDateRange.start.replace(/-/g, '');
+    const endDate = visibleDateRange.end.replace(/-/g, '');
+
+    const filtered: { date: string; k: number; d: number; j: number }[] = [];
+    for (let i = 0; i < dates.length; i++) {
+      const itemDate = dates[i].replace(/-/g, '');
+      if (itemDate >= startDate && itemDate <= endDate) {
+        filtered.push({
+          date: dates[i],
+          k: kdj.k[i] ?? 0,
+          d: kdj.d[i] ?? 0,
+          j: kdj.j[i] ?? 0,
+        });
+      }
+    }
+
+    displayDates = filtered.map(f => f.date);
+    displayK = filtered.map(f => f.k);
+    displayD = filtered.map(f => f.d);
+    displayJ = filtered.map(f => f.j);
+  } else {
+    const maxPoints = 120;
+    const startIdx = Math.max(0, dates.length - maxPoints);
+    displayDates = dates.slice(startIdx);
+    displayK = kdj.k.slice(startIdx);
+    displayD = kdj.d.slice(startIdx);
+    displayJ = kdj.j.slice(startIdx);
+  }
 
   const chartData = displayDates.map((date, i) => ({
     name: date,
@@ -58,7 +87,7 @@ export default function KdjChart({ dates, kdj }: KdjChartProps) {
   return (
     <div ref={containerRef} className="p-4" style={{ height: 250, width: '100%' }}>
       {dimensions.width > 0 && dimensions.height > 0 && (
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3e" />
             <XAxis

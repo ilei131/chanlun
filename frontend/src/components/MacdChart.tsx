@@ -20,9 +20,10 @@ interface MacdData {
 
 interface MacdChartProps {
   macd: MacdData;
+  visibleDateRange?: { start: string; end: string } | null;
 }
 
-export default function MacdChart({ macd }: MacdChartProps) {
+export default function MacdChart({ macd, visibleDateRange }: MacdChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
@@ -43,12 +44,41 @@ export default function MacdChart({ macd }: MacdChartProps) {
   if (!macd || !macd.dates || macd.dates.length === 0) return null;
 
   const dates = macd.dates;
-  const maxPoints = 120;
-  const startIdx = Math.max(0, dates.length - maxPoints);
-  const displayDates = dates.slice(startIdx);
-  const displayDif = macd.dif.slice(startIdx);
-  const displayDea = macd.dea.slice(startIdx);
-  const displayMacd = macd.macd.slice(startIdx);
+
+  let displayDates: string[];
+  let displayDif: number[];
+  let displayDea: number[];
+  let displayMacd: number[];
+
+  if (visibleDateRange) {
+    const startDate = visibleDateRange.start.replace(/-/g, '');
+    const endDate = visibleDateRange.end.replace(/-/g, '');
+
+    const filtered: { date: string; dif: number; dea: number; macd: number }[] = [];
+    for (let i = 0; i < dates.length; i++) {
+      const itemDate = dates[i].replace(/-/g, '');
+      if (itemDate >= startDate && itemDate <= endDate) {
+        filtered.push({
+          date: dates[i],
+          dif: macd.dif[i] ?? 0,
+          dea: macd.dea[i] ?? 0,
+          macd: macd.macd[i] ?? 0,
+        });
+      }
+    }
+
+    displayDates = filtered.map(f => f.date);
+    displayDif = filtered.map(f => f.dif);
+    displayDea = filtered.map(f => f.dea);
+    displayMacd = filtered.map(f => f.macd);
+  } else {
+    const maxPoints = 120;
+    const startIdx = Math.max(0, dates.length - maxPoints);
+    displayDates = dates.slice(startIdx);
+    displayDif = macd.dif.slice(startIdx);
+    displayDea = macd.dea.slice(startIdx);
+    displayMacd = macd.macd.slice(startIdx);
+  }
 
   const chartData = displayDates.map((date, i) => ({
     name: date,
@@ -60,7 +90,7 @@ export default function MacdChart({ macd }: MacdChartProps) {
   return (
     <div ref={containerRef} className="p-4" style={{ height: 250, width: '100%' }}>
       {dimensions.width > 0 && dimensions.height > 0 && (
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3e" />
             <XAxis

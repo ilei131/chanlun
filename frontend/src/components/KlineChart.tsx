@@ -64,9 +64,10 @@ interface KlineChartProps {
     sellPoints: BuySellPoint[];
     zsList: ZsItem[];
     fxList: FenXingItem[];
+    onVisibleRangeChange?: (range: { start: string; end: string }) => void;
 }
 
-export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, fxList }: KlineChartProps) {
+export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, fxList, onVisibleRangeChange }: KlineChartProps) {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
 
@@ -340,6 +341,40 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
 
         chart.timeScale().fitContent();
 
+        const formatTimestamp = (timestamp: Time): string => {
+            let date: Date;
+            if (typeof timestamp === 'string') {
+                if (timestamp.includes('-') || timestamp.includes('/')) {
+                    date = new Date(timestamp);
+                } else {
+                    const num = parseFloat(timestamp);
+                    if (!isNaN(num)) {
+                        date = new Date(num * 1000);
+                    } else {
+                        date = new Date(timestamp);
+                    }
+                }
+            } else {
+                date = new Date((timestamp as number) * 1000);
+            }
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}${month}${day}`;
+        };
+
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        const oneYearAgoStr = `${oneYearAgo.getFullYear()}-${String(oneYearAgo.getMonth() + 1).padStart(2, '0')}-${oneYearAgo.getDate()}`;
+
+        const oneYearAgoIdx = candleData.findIndex(c => String(c.time) >= oneYearAgoStr);
+        if (oneYearAgoIdx >= 0) {
+            chart.timeScale().setVisibleLogicalRange({
+                from: oneYearAgoIdx,
+                to: candleData.length - 1,
+            });
+        }
+
         const lastBarIndex = candleData.length - 1;
         let prevBarCount: number | null = null;
         let skipNext = false;
@@ -393,6 +428,22 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
                 prevBarCount = barCount;
             }
         });
+
+        const handleTimeRangeChange = () => {
+            if (!onVisibleRangeChange) return;
+            const visibleRange = chart.timeScale().getVisibleRange();
+            if (visibleRange) {
+                const startDate = formatTimestamp(visibleRange.from);
+                const endDate = formatTimestamp(visibleRange.to);
+                if (startDate && endDate && startDate !== '19700101' && endDate !== '19700101') {
+                    onVisibleRangeChange({ start: startDate, end: endDate });
+                }
+            }
+        };
+
+        chart.timeScale().subscribeVisibleTimeRangeChange(handleTimeRangeChange);
+
+        handleTimeRangeChange();
 
         const handleResize = () => {
             if (container) {

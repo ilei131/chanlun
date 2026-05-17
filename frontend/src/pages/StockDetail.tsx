@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Loader2, AlertCircle, TrendingUp, TrendingDown, Target, Zap, Building2, MapPin, Calendar, Briefcase, BarChart3 } from 'lucide-react'
 import { stockApi, StockDetail as StockDetailType } from '@/api'
@@ -55,8 +55,18 @@ function StockDetail() {
     const [detail, setDetail] = useState<StockDetailType | null>(null)
     const [loading, setLoading] = useState(true)
     const [period, setPeriod] = useState('daily')
-    const days = 365
+    const days = 10000
     const [error, setError] = useState('')
+    const [visibleDateRange, setVisibleDateRange] = useState<{ start: string; end: string } | null>(null)
+    const visibleDateRangeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const handleVisibleRangeChange = useCallback((range: { start: string; end: string }) => {
+        if (visibleDateRangeDebounceRef.current) {
+            clearTimeout(visibleDateRangeDebounceRef.current)
+        }
+        visibleDateRangeDebounceRef.current = setTimeout(() => {
+            setVisibleDateRange(range)
+        }, 100)
+    }, [])
 
     const debouncedFetchStockDetail = useCallback(
         (code: string, period: string, days: number) => {
@@ -212,31 +222,31 @@ function StockDetail() {
         return features.length > 0 ? features : ['暂无特征']
     }
 
-    const { kline, ma, zsList } = prepareKlineData()
-    const macdData = prepareMacdData()
-    const kdjData = prepareKdjData()
+    const { kline, ma, zsList } = useMemo(() => prepareKlineData(), [detail?.kline_data, detail?.chanlun_signals.zs_list])
+    const macdData = useMemo(() => prepareMacdData(), [detail?.indicators.macd])
+    const kdjData = useMemo(() => prepareKdjData(), [detail?.indicators.kdj])
 
-    const buyPoints = detail?.chanlun_signals.buy_signals
+    const buyPoints = useMemo(() => detail?.chanlun_signals.buy_signals
         .filter(s => s.signal_type.includes('buy'))
         .map(s => ({
             date: s.date,
             type: getSignalTypeName(s.signal_type),
             price: s.price,
-        })) || []
+        })) || [], [detail?.chanlun_signals.buy_signals])
 
-    const sellPoints = detail?.chanlun_signals.buy_signals
+    const sellPoints = useMemo(() => detail?.chanlun_signals.buy_signals
         .filter(s => s.signal_type.includes('sell'))
         .map(s => ({
             date: s.date,
             type: getSignalTypeName(s.signal_type),
             price: s.price,
-        })) || []
+        })) || [], [detail?.chanlun_signals.buy_signals])
 
-    const fxList = detail?.chanlun_signals.fx_list.map(fx => ({
+    const fxList = useMemo(() => detail?.chanlun_signals.fx_list.map(fx => ({
         date: fx.date,
         price: fx.price,
         direction: fx.direction,
-    })) || []
+    })) || [], [detail?.chanlun_signals.fx_list])
 
     if (loading) {
         return (
@@ -485,7 +495,7 @@ function StockDetail() {
                                 </div>
                             </div>
                         </div>
-                        <KlineChart kline={kline} ma={ma} buyPoints={buyPoints} sellPoints={sellPoints} zsList={zsList} fxList={fxList} />
+                        <KlineChart kline={kline} ma={ma} buyPoints={buyPoints} sellPoints={sellPoints} zsList={zsList} fxList={fxList} onVisibleRangeChange={handleVisibleRangeChange} />
                     </div>
 
                     {/* MACD Chart */}
@@ -496,7 +506,7 @@ function StockDetail() {
                                 MACD
                             </h3>
                         </div>
-                        {macdData && <MacdChart macd={macdData} />}
+                        {macdData && <MacdChart macd={macdData} visibleDateRange={visibleDateRange} />}
                     </div>
 
                     {/* KDJ Chart */}
@@ -507,7 +517,7 @@ function StockDetail() {
                                 KDJ
                             </h3>
                         </div>
-                        {kdjData && <KdjChart dates={kdjData.dates} kdj={kdjData.kdj} />}
+                        {kdjData && <KdjChart dates={kdjData.dates} kdj={kdjData.kdj} visibleDateRange={visibleDateRange} />}
                     </div>
                 </div>
 
