@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -40,53 +40,57 @@ export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  if (!dates || dates.length === 0 || !kdj) return null;
+  const chartData = useMemo(() => {
+    if (!dates || dates.length === 0 || !kdj) return [];
 
-  let displayDates: string[];
-  let displayK: number[];
-  let displayD: number[];
-  let displayJ: number[];
+    let displayDates: string[];
+    let displayK: number[];
+    let displayD: number[];
+    let displayJ: number[];
 
-  if (visibleDateRange) {
-    const startDate = visibleDateRange.start.replace(/-/g, '');
-    const endDate = visibleDateRange.end.replace(/-/g, '');
+    if (visibleDateRange) {
+      const startDate = visibleDateRange.start.replace(/-/g, '');
+      const endDate = visibleDateRange.end.replace(/-/g, '');
 
-    const filtered: { date: string; k: number; d: number; j: number }[] = [];
-    for (let i = 0; i < dates.length; i++) {
-      const itemDate = dates[i].replace(/-/g, '');
-      if (itemDate >= startDate && itemDate <= endDate) {
-        filtered.push({
-          date: dates[i],
-          k: kdj.k[i] ?? 0,
-          d: kdj.d[i] ?? 0,
-          j: kdj.j[i] ?? 0,
-        });
+      const filtered: { date: string; k: number; d: number; j: number }[] = [];
+      for (let i = 0; i < dates.length; i++) {
+        const itemDate = dates[i].replace(/-/g, '');
+        if (itemDate >= startDate && itemDate <= endDate) {
+          filtered.push({
+            date: dates[i],
+            k: kdj.k[i] ?? 0,
+            d: kdj.d[i] ?? 0,
+            j: kdj.j[i] ?? 0,
+          });
+        }
       }
+
+      displayDates = filtered.map(f => f.date);
+      displayK = filtered.map(f => f.k);
+      displayD = filtered.map(f => f.d);
+      displayJ = filtered.map(f => f.j);
+    } else {
+      const maxPoints = 120;
+      const startIdx = Math.max(0, dates.length - maxPoints);
+      displayDates = dates.slice(startIdx);
+      displayK = kdj.k.slice(startIdx);
+      displayD = kdj.d.slice(startIdx);
+      displayJ = kdj.j.slice(startIdx);
     }
 
-    displayDates = filtered.map(f => f.date);
-    displayK = filtered.map(f => f.k);
-    displayD = filtered.map(f => f.d);
-    displayJ = filtered.map(f => f.j);
-  } else {
-    const maxPoints = 120;
-    const startIdx = Math.max(0, dates.length - maxPoints);
-    displayDates = dates.slice(startIdx);
-    displayK = kdj.k.slice(startIdx);
-    displayD = kdj.d.slice(startIdx);
-    displayJ = kdj.j.slice(startIdx);
-  }
+    return displayDates.map((date, i) => ({
+      name: date,
+      k: Number(displayK[i]) || 0,
+      d: Number(displayD[i]) || 0,
+      j: Number(displayJ[i]) || 0,
+    }));
+  }, [dates, kdj, visibleDateRange]);
 
-  const chartData = displayDates.map((date, i) => ({
-    name: date,
-    k: Number(displayK[i]) || 0,
-    d: Number(displayD[i]) || 0,
-    j: Number(displayJ[i]) || 0,
-  }));
+  if (!dates || dates.length === 0 || !kdj) return null;
 
   return (
     <div ref={containerRef} className="p-4" style={{ height: 250, width: '100%' }}>
-      {dimensions.width > 0 && dimensions.height > 0 && (
+      {dimensions.width > 0 && dimensions.height > 0 && chartData.length > 0 && (
         <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3e" />
@@ -127,6 +131,7 @@ export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps
               stroke="#e4e6ef"
               dot={false}
               strokeWidth={1.5}
+              isAnimationActive={false}
             />
             <Line
               type="monotone"
@@ -135,6 +140,7 @@ export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps
               stroke="#f59e0b"
               dot={false}
               strokeWidth={1.5}
+              isAnimationActive={false}
             />
             <Line
               type="monotone"
@@ -143,6 +149,7 @@ export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps
               stroke="#d946ef"
               dot={false}
               strokeWidth={1.5}
+              isAnimationActive={false}
             />
           </LineChart>
         </ResponsiveContainer>
