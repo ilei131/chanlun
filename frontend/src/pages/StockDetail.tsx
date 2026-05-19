@@ -53,6 +53,7 @@ function StockDetail() {
     const { code } = useParams<{ code: string }>()
     const navigate = useNavigate()
     const [detail, setDetail] = useState<StockDetailType | null>(null)
+    const [dailyDetail, setDailyDetail] = useState<StockDetailType | null>(null)
     const [loading, setLoading] = useState(true)
     const [period, setPeriod] = useState('daily')
     const days = 10000
@@ -69,20 +70,25 @@ function StockDetail() {
     }, [])
 
     const debouncedFetchStockDetail = useCallback(
-        (code: string, period: string, days: number) => {
+        async (code: string, period: string, days: number) => {
             setLoading(true)
             setError('')
-            stockApi.getDetail(code, period, days)
-                .then(response => {
-                    setDetail(response.data)
-                })
-                .catch((error: any) => {
-                    console.error('获取股票详情失败:', error)
-                    setError(error.message || '获取股票详情失败')
-                })
-                .finally(() => {
-                    setLoading(false)
-                })
+            try {
+                const response = await stockApi.getDetail(code, period, days)
+                setDetail(response.data)
+
+                if (period !== 'daily') {
+                    const dailyResponse = await stockApi.getDetail(code, 'daily', days)
+                    setDailyDetail(dailyResponse.data)
+                } else {
+                    setDailyDetail(response.data)
+                }
+            } catch (error: any) {
+                console.error('获取股票详情失败:', error)
+                setError(error.message || '获取股票详情失败')
+            } finally {
+                setLoading(false)
+            }
         },
         []
     )
@@ -123,6 +129,128 @@ function StockDetail() {
         return result
     }
 
+    const getMonthFromDate = (dateStr: string): string => {
+        if (dateStr.length === 8) {
+            return dateStr.slice(0, 6)
+        }
+        return dateStr
+    }
+
+    const calculateMonthKlineFromDaily = (dailyKline: KlineData[]): KlineData[] => {
+        const monthlyMap = new Map<string, KlineData>()
+
+        dailyKline.forEach(kline => {
+            const month = getMonthFromDate(kline.date)
+            if (!monthlyMap.has(month)) {
+                monthlyMap.set(month, {
+                    date: month + '01',
+                    open: kline.open,
+                    high: kline.high,
+                    low: kline.low,
+                    close: kline.close,
+                    volume: kline.volume,
+                })
+            } else {
+                const existing = monthlyMap.get(month)!
+                existing.high = Math.max(existing.high, kline.high)
+                existing.low = Math.min(existing.low, kline.low)
+                existing.close = kline.close
+                existing.volume += kline.volume
+            }
+        })
+
+        return Array.from(monthlyMap.values()).sort((a, b) => a.date.localeCompare(b.date))
+    }
+
+    const calculateMacdFromCloses = (closes: number[]): { dif: number[]; dea: number[]; hist: number[] } => {
+        const fast = 12
+        const slow = 26
+        const signal = 9
+
+        const emaFast: number[] = []
+        const emaSlow: number[] = []
+        const dif: number[] = []
+        const dea: number[] = []
+        const hist: number[] = []
+
+        for (let i = 0; i < closes.length; i++) {
+            if (i < fast - 1) {
+                emaFast.push(closes[i])
+            } else if (i === fast - 1) {
+                const sum = closes.slice(0, fast).reduce((a, b) => a + b, 0)
+                emaFast.push(sum / fast)
+            } else {
+                emaFast.push((2 * closes[i] + (fast - 1) * emaFast[i - 1]) / (fast + 1))
+            }
+
+            if (i < slow - 1) {
+                emaSlow.push(closes[i])
+            } else if (i === slow - 1) {
+                const sum = closes.slice(0, slow).reduce((a, b) => a + b, 0)
+                emaSlow.push(sum / slow)
+            } else {
+                emaSlow.push((2 * closes[i] + (slow - 1) * emaSlow[i - 1]) / (slow + 1))
+            }
+
+            dif.push(emaFast[i] - emaSlow[i])
+
+            if (i < slow + signal - 1) {
+                dea.push(dif[i])
+            } else {
+                dea.push(((signal - 1) * dea[i - 1] + dif[i]) / signal)
+            }
+
+            hist.push(dif[i] - dea[i])
+        }
+
+        return { dif, dea, hist }
+    }
+
+    const calculateKdjFromKline = (klineData: KlineData[]): { k: number[]; d: number[]; j: number[] } => {
+        const n = 9
+
+        const k: number[] = []
+        const d: number[] = []
+        const j: number[] = []
+
+        let prevK = 50
+        let prevD = 50
+
+        for (let i = 0; i < klineData.length; i++) {
+            if (i < n - 1) {
+                k.push(50)
+                d.push(50)
+                j.push(50)
+                continue
+            }
+
+            const start = i - n + 1
+            let lowest = Infinity
+            let highest = -Infinity
+
+            for (let j = start; j <= i; j++) {
+                lowest = Math.min(lowest, klineData[j].low)
+                highest = Math.max(highest, klineData[j].high)
+            }
+
+            const close = klineData[i].close
+            const rsv = highest === lowest ? 0 : ((close - lowest) / (highest - lowest)) * 100
+
+            const currentK = (2 * prevK + rsv) / 3
+            const currentD = (2 * prevD + currentK) / 3
+            const currentJ = 3 * currentK - 2 * currentD
+
+            k.push(currentK)
+            d.push(currentD)
+            j.push(currentJ)
+
+            prevK = currentK
+            prevD = currentD
+        }
+
+        return { k, d, j }
+    }
+
     const prepareKlineData = () => {
         if (!detail?.kline_data.length) return { kline: [], ma: { dates: [], ma5: [], ma10: [], ma20: [], ma60: [] }, zsList: [] }
 
@@ -136,6 +264,31 @@ function StockDetail() {
         }))
 
         kline = kline.sort((a, b) => a.date.localeCompare(b.date))
+
+        if (period === 'monthly' && dailyDetail?.kline_data.length) {
+            const dailyKline: KlineData[] = dailyDetail.kline_data.map(k => ({
+                date: k.trade_date,
+                open: k.open,
+                high: k.high,
+                low: k.low,
+                close: k.close,
+                volume: k.volume,
+            })).sort((a, b) => a.date.localeCompare(b.date))
+
+            const monthlyKline = calculateMonthKlineFromDaily(dailyKline)
+
+            if (monthlyKline.length > 0) {
+                const lastMonthFromApi = kline[kline.length - 1]?.date.slice(0, 6)
+                const lastMonthFromDaily = monthlyKline[monthlyKline.length - 1]?.date.slice(0, 6)
+
+                if (lastMonthFromDaily !== lastMonthFromApi) {
+                    const currentMonthKline = monthlyKline.filter(m => m.date.slice(0, 6) === lastMonthFromDaily)
+                    if (currentMonthKline.length > 0) {
+                        kline = [...kline, currentMonthKline[0]]
+                    }
+                }
+            }
+        }
 
         const ma5 = calculateMA(kline, 5)
         const ma10 = calculateMA(kline, 10)
@@ -172,8 +325,31 @@ function StockDetail() {
     }
 
     const prepareMacdData = () => {
-        if (!detail?.indicators.macd.length) return null
-        const rawData = detail.indicators.macd.sort((a, b) => a.trade_date.localeCompare(b.trade_date))
+        if (!detail?.indicators.macd.length && !dailyDetail?.kline_data.length) return null
+
+        if (period === 'monthly' && dailyDetail?.kline_data.length) {
+            const dailyKline: KlineData[] = dailyDetail.kline_data.map(k => ({
+                date: k.trade_date,
+                open: k.open,
+                high: k.high,
+                low: k.low,
+                close: k.close,
+                volume: k.volume,
+            })).sort((a, b) => a.date.localeCompare(b.date))
+
+            const monthlyKline = calculateMonthKlineFromDaily(dailyKline)
+            const closes = monthlyKline.map(k => k.close)
+            const { dif, dea, hist } = calculateMacdFromCloses(closes)
+
+            return {
+                dates: monthlyKline.map(k => k.date),
+                dif,
+                dea,
+                macd: hist,
+            }
+        }
+
+        const rawData = detail?.indicators.macd?.sort((a, b) => a.trade_date.localeCompare(b.trade_date)) || []
         return {
             dates: rawData.map(m => m.trade_date),
             dif: rawData.map(m => m.dif),
@@ -183,8 +359,28 @@ function StockDetail() {
     }
 
     const prepareKdjData = () => {
-        if (!detail?.indicators.kdj.length) return null
-        const rawData = detail.indicators.kdj.sort((a, b) => a.trade_date.localeCompare(b.trade_date))
+        if (!detail?.indicators.kdj.length && !dailyDetail?.kline_data.length) return null
+
+        if (period === 'monthly' && dailyDetail?.kline_data.length) {
+            const dailyKline: KlineData[] = dailyDetail.kline_data.map(k => ({
+                date: k.trade_date,
+                open: k.open,
+                high: k.high,
+                low: k.low,
+                close: k.close,
+                volume: k.volume,
+            })).sort((a, b) => a.date.localeCompare(b.date))
+
+            const monthlyKline = calculateMonthKlineFromDaily(dailyKline)
+            const { k, d, j } = calculateKdjFromKline(monthlyKline)
+
+            return {
+                dates: monthlyKline.map(k => k.date),
+                kdj: { k, d, j },
+            }
+        }
+
+        const rawData = detail?.indicators.kdj?.sort((a, b) => a.trade_date.localeCompare(b.trade_date)) || []
         return {
             dates: rawData.map(k => k.trade_date),
             kdj: {
@@ -222,9 +418,9 @@ function StockDetail() {
         return features.length > 0 ? features : ['暂无特征']
     }
 
-    const { kline, ma, zsList } = useMemo(() => prepareKlineData(), [detail?.kline_data, detail?.chanlun_signals.zs_list])
-    const macdData = useMemo(() => prepareMacdData(), [detail?.indicators.macd])
-    const kdjData = useMemo(() => prepareKdjData(), [detail?.indicators.kdj])
+    const { kline, ma, zsList } = useMemo(() => prepareKlineData(), [detail?.kline_data, detail?.chanlun_signals.zs_list, period, dailyDetail?.kline_data])
+    const macdData = useMemo(() => prepareMacdData(), [detail?.indicators.macd, period, dailyDetail?.kline_data])
+    const kdjData = useMemo(() => prepareKdjData(), [detail?.indicators.kdj, period, dailyDetail?.kline_data])
 
     const buyPoints = useMemo(() => detail?.chanlun_signals.buy_signals
         .filter(s => s.signal_type.includes('buy'))
