@@ -130,3 +130,47 @@ pub struct NewStock {
     pub market: String,
     pub stock_type: String,
 }
+
+/// 用户模型
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct User {
+    pub id: i32,
+    pub username: String,
+    pub password_hash: String,
+    pub email: Option<String>,
+    pub role: String,
+    pub is_active: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+/// 注册请求
+#[derive(Debug, Deserialize)]
+pub struct RegisterRequest {
+    pub username: String,
+    pub password: String,
+    pub email: Option<String>,
+}
+
+/// 登录请求
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+/// 登录响应
+#[derive(Debug, Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+    pub user: UserInfo,
+}
+
+/// 用户信息（不含密码）
+#[derive(Debug, Serialize)]
+pub struct UserInfo {
+    pub id: i32,
+    pub username: String,
+    pub email: Option<String>,
+    pub role: String,
+}

@@ -32,6 +32,10 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 # 异步运行时
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 
+# 认证相关
+argon2 = "0.5"
+jsonwebtoken = "9"
+
 # 其他
 thiserror = "1"
 futures = "0.3"

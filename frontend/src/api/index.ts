@@ -255,3 +255,64 @@ export const indicatorsApi = {
 export const screenerApi = {
     run: (params: ScreenerRequest) => api.post<ScreenerResponse>('/screener/run', params),
 }
+
+// 认证相关接口
+export interface LoginRequest {
+    username: string
+    password: string
+}
+
+export interface RegisterRequest {
+    username: string
+    password: string
+    email?: string
+}
+
+export interface UserInfo {
+    id: number
+    username: string
+    email?: string
+    role: string
+}
+
+export interface LoginResponse {
+    token: string
+    user: UserInfo
+}
+
+const getAuthHeaders = () => {
+    const token = localStorage.getItem('token')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+export const authApi = {
+    login: (data: LoginRequest) =>
+        api.post<LoginResponse>('/auth/login', data),
+
+    register: (data: RegisterRequest) =>
+        api.post('/auth/register', data),
+
+    getCurrentUser: () =>
+        api.get<UserInfo>('/auth/me', { headers: getAuthHeaders() }),
+
+    logout: () => {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+    },
+
+    getUser: (): UserInfo | null => {
+        const userStr = localStorage.getItem('user')
+        if (!userStr || userStr === 'undefined' || userStr === 'null') {
+            return null
+        }
+        try {
+            return JSON.parse(userStr)
+        } catch {
+            return null
+        }
+    },
+
+    isAuthenticated: (): boolean => {
+        return !!localStorage.getItem('token')
+    },
+}

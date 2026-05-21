@@ -1,161 +1,301 @@
-import { Routes, Route } from 'react-router-dom'
-import { Layout, Menu } from 'antd'
-import { BarChartOutlined, SearchOutlined, FileTextOutlined, SettingOutlined, StarOutlined } from '@ant-design/icons'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Screener from '@/pages/Screener'
 import StockSearch from '@/pages/StockSearch'
 import StockDetail from '@/pages/StockDetail'
 import Signals from '@/pages/Signals'
 import SettingsPage from '@/pages/Settings'
-import { useState } from 'react'
-
-const { Header, Content, Sider } = Layout
+import Login from '@/pages/Login'
+import { useState, useEffect } from 'react'
+import { authApi } from '@/api'
+import { Menu, X, User, LogOut, Settings, ChevronDown } from 'lucide-react'
 
 function App() {
-    const [collapsed, setCollapsed] = useState(false)
-    const [current, setCurrent] = useState('screener')
+    const location = useLocation()
+    const [sidebarOpen, setSidebarOpen] = useState(false)
+    const [userMenuOpen, setUserMenuOpen] = useState(false)
+    const [isMobile, setIsMobile] = useState(false)
+    const [user, setUser] = useState<{ username: string; role: string } | null>(null)
+    const [checkedAuth, setCheckedAuth] = useState(false)
+
+    useEffect(() => {
+        const checkScreenSize = () => {
+            setIsMobile(window.innerWidth < 768)
+            if (window.innerWidth < 768) {
+                setSidebarOpen(false)
+            }
+        }
+        checkScreenSize()
+        window.addEventListener('resize', checkScreenSize)
+        return () => window.removeEventListener('resize', checkScreenSize)
+    }, [])
+
+    useEffect(() => {
+        const currentUser = authApi.getUser()
+        setUser(currentUser)
+        setCheckedAuth(true)
+    }, [location])
+
+    const handleLogout = () => {
+        authApi.logout()
+        setUser(null)
+        window.location.href = '/login'
+    }
 
     const menuItems = [
-        { key: 'screener', icon: <SearchOutlined className="w-5 h-5" />, label: '选股大厅' },
-        { key: 'signals', icon: <BarChartOutlined className="w-5 h-5" />, label: '信号列表' },
-        { key: 'reports', icon: <FileTextOutlined className="w-5 h-5" />, label: '分析报告' },
-        { key: 'settings', icon: <SettingOutlined className="w-5 h-5" />, label: '系统设置' },
+        { path: '/', label: '首页', icon: '📊' },
+        { path: '/screener', label: '选股大厅', icon: '🎯' },
+        { path: '/signals', label: '信号列表', icon: '📈' },
+        { path: '/reports', label: '分析报告', icon: '📋' },
+        { path: '/settings', label: '系统设置', icon: '⚙️' },
     ]
 
-    return (
-        <Layout className="min-h-screen" style={{ background: '#0a0a12' }}>
-            {/* Header */}
-            <Header
-                className="relative overflow-hidden"
-                style={{
-                    background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.9) 0%, rgba(55, 48, 163, 0.9) 50%, rgba(79, 70, 229, 0.9) 100%)',
-                    borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
-                    backdropFilter: 'blur(20px)',
-                }}
-            >
-                {/* Glow effect */}
-                <div
-                    className="absolute inset-0 opacity-30"
-                    style={{
-                        background: 'radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.5) 0%, transparent 70%)',
-                    }}
-                />
+    const isLoginPage = location.pathname === '/login'
+    const isAuthenticated = authApi.isAuthenticated()
 
-                <div className="relative z-10 flex items-center justify-between px-6 py-4">
-                    <div className="flex items-center gap-3">
+    // 如果还没检查认证状态，显示加载中
+    if (!checkedAuth) {
+        return (
+            <div className="min-h-screen flex items-center justify-center" style={{ background: '#0a0a12' }}>
+                <div className="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full" />
+            </div>
+        )
+    }
+
+    // 如果是登录页，直接显示登录页面
+    if (isLoginPage) {
+        return <Login />
+    }
+
+    // 如果未登录，重定向到登录页
+    if (!isAuthenticated) {
+        return <Navigate to="/login" replace />
+    }
+
+    return (
+        <div className="min-h-screen flex" style={{ background: '#0a0a12' }}>
+            {/* Sidebar - Desktop */}
+            {!isMobile && (
+                <aside
+                    className="w-64 flex-shrink-0 flex flex-col border-r border-slate-800"
+                    style={{ background: 'linear-gradient(180deg, #111120 0%, #0a0a12 100%)' }}
+                >
+                    {/* Logo */}
+                    <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-800/50">
                         <div
-                            className="relative p-2 rounded-xl"
+                            className="w-10 h-10 rounded-xl flex items-center justify-center"
                             style={{
-                                background: 'rgba(255, 255, 255, 0.1)',
-                                boxShadow: '0 0 20px rgba(99, 102, 241, 0.3)',
+                                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)',
+                                border: '1px solid rgba(99, 102, 241, 0.5)',
                             }}
                         >
-                            <StarOutlined className="w-6 h-6 text-indigo-300" />
+                            <span className="text-xl">⭐</span>
                         </div>
                         <div>
-                            <h1
-                                className="text-xl font-bold bg-gradient-to-r from-indigo-200 via-purple-200 to-pink-200 bg-clip-text text-transparent"
+                            <h1 className="text-base font-bold text-white">缠论选股系统</h1>
+                            <p className="text-xs text-slate-500">智能量化分析</p>
+                        </div>
+                    </div>
+
+                    {/* Navigation */}
+                    <nav className="flex-1 py-4 px-3 space-y-1">
+                        {menuItems.map((item) => {
+                            const isActive = location.pathname === item.path
+                            return (
+                                <a
+                                    key={item.path}
+                                    href={item.path}
+                                    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive
+                                            ? 'text-white'
+                                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                                        }`}
+                                    style={
+                                        isActive
+                                            ? {
+                                                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%)',
+                                                border: '1px solid rgba(99, 102, 241, 0.3)',
+                                            }
+                                            : {}
+                                    }
+                                >
+                                    <span className="text-lg">{item.icon}</span>
+                                    {item.label}
+                                </a>
+                            )
+                        })}
+                    </nav>
+
+                    {/* Version */}
+                    <div className="px-6 py-4 border-t border-slate-800/50">
+                        <div className="flex items-center justify-between text-xs text-slate-500">
+                            <span>v0.1.0</span>
+                            <div className="flex items-center gap-1.5">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                <span>在线</span>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+            )}
+
+            {/* Mobile Sidebar Overlay */}
+            {isMobile && sidebarOpen && (
+                <>
+                    <div
+                        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+                        onClick={() => setSidebarOpen(false)}
+                    />
+                    <aside
+                        className="fixed left-0 top-0 bottom-0 w-64 z-50 flex flex-col border-r border-slate-800"
+                        style={{ background: 'linear-gradient(180deg, #111120 0%, #0a0a12 100%)' }}
+                    >
+                        {/* Logo */}
+                        <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800/50">
+                            <div className="flex items-center gap-3">
+                                <div
+                                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                                    style={{
+                                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)',
+                                        border: '1px solid rgba(99, 102, 241, 0.5)',
+                                    }}
+                                >
+                                    <span className="text-xl">⭐</span>
+                                </div>
+                                <h1 className="text-base font-bold text-white">缠论选股</h1>
+                            </div>
+                            <button
+                                onClick={() => setSidebarOpen(false)}
+                                className="p-2 rounded-lg hover:bg-slate-800 text-slate-400"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Navigation */}
+                        <nav className="flex-1 py-4 px-3 space-y-1">
+                            {menuItems.map((item) => {
+                                const isActive = location.pathname === item.path
+                                return (
+                                    <a
+                                        key={item.path}
+                                        href={item.path}
+                                        className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive
+                                                ? 'text-white'
+                                                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                                            }`}
+                                        style={
+                                            isActive
+                                                ? {
+                                                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%)',
+                                                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                                                }
+                                                : {}
+                                        }
+                                        onClick={() => setSidebarOpen(false)}
+                                    >
+                                        <span className="text-lg">{item.icon}</span>
+                                        {item.label}
+                                    </a>
+                                )
+                            })}
+                        </nav>
+                    </aside>
+                </>
+            )}
+
+            {/* Main Content */}
+            <div className="flex-1 flex flex-col min-w-0">
+                {/* Header */}
+                <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b border-slate-800" style={{ background: 'rgba(17, 17, 32, 0.8)' }}>
+                    {/* Mobile Menu Button */}
+                    {isMobile && (
+                        <button
+                            onClick={() => setSidebarOpen(true)}
+                            className="p-2 rounded-lg hover:bg-slate-800 text-slate-400"
+                        >
+                            <Menu className="w-6 h-6" />
+                        </button>
+                    )}
+
+                    {/* Page Title */}
+                    <div className="flex-1 md:flex-none">
+                        <h2 className="text-lg font-semibold text-white">
+                            {menuItems.find(item => item.path === location.pathname)?.label || '缠论选股系统'}
+                        </h2>
+                    </div>
+
+                    {/* User Menu */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setUserMenuOpen(!userMenuOpen)}
+                            className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors"
+                        >
+                            <div
+                                className="w-8 h-8 rounded-full flex items-center justify-center"
                                 style={{
-                                    textShadow: '0 0 30px rgba(99, 102, 241, 0.5)',
+                                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)',
                                 }}
                             >
-                                缠论选股系统
-                            </h1>
-                            <p className="text-xs text-indigo-300/60">智能量化分析平台</p>
-                        </div>
+                                <User className="w-4 h-4 text-indigo-400" />
+                            </div>
+                            <span className="hidden md:block text-sm text-white">{user?.username || '用户'}</span>
+                            <ChevronDown className="w-4 h-4 text-slate-400" />
+                        </button>
+
+                        {userMenuOpen && (
+                            <>
+                                <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setUserMenuOpen(false)}
+                                />
+                                <div
+                                    className="absolute right-0 top-full mt-2 w-48 rounded-xl border border-slate-700/50 overflow-hidden z-50"
+                                    style={{ background: '#1e1e30', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}
+                                >
+                                    <div className="px-4 py-3 border-b border-slate-700/50">
+                                        <p className="text-sm text-white font-medium">{user?.username}</p>
+                                        <p className="text-xs text-slate-500 capitalize">{user?.role || 'user'}</p>
+                                    </div>
+                                    <div className="py-1">
+                                        <a
+                                            href="/settings"
+                                            className="flex items-center gap-2 px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors"
+                                        >
+                                            <Settings className="w-4 h-4" />
+                                            设置
+                                        </a>
+                                        <button
+                                            onClick={handleLogout}
+                                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-slate-800/50 transition-colors"
+                                        >
+                                            <LogOut className="w-4 h-4" />
+                                            退出登录
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
-                    <div className="flex items-center gap-4">
-                        <span className="text-xs text-indigo-200/60 font-mono">v0.1.0</span>
-                        <div
-                            className="w-2 h-2 rounded-full animate-pulse"
-                            style={{ backgroundColor: '#10b981' }}
-                        />
-                    </div>
-                </div>
-            </Header>
+                </header>
 
-            <Layout>
-                {/* Sidebar */}
-                <Sider
-                    trigger={null}
-                    collapsible
-                    collapsed={collapsed}
-                    className="relative"
-                    style={{
-                        background: 'linear-gradient(180deg, rgba(17, 17, 32, 0.95) 0%, rgba(10, 10, 18, 0.98) 100%)',
-                        borderRight: '1px solid rgba(99, 102, 241, 0.15)',
-                        backdropFilter: 'blur(20px)',
-                    }}
-                    width={220}
-                >
-                    {/* Sidebar glow */}
-                    <div
-                        className="absolute top-0 left-0 right-0 h-px"
-                        style={{
-                            background: 'linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.5), transparent)',
-                        }}
-                    />
+                {/* Page Content */}
+                <main className="flex-1 p-4 md:p-6 overflow-auto">
+                    <Routes>
+                        <Route path="/" element={<StockSearch />} />
+                        <Route path="/search" element={<StockSearch />} />
+                        <Route path="/screener" element={<Screener />} />
+                        <Route path="/stock/:code" element={<StockDetail />} />
+                        <Route path="/signals" element={<Signals />} />
+                        <Route path="/reports" element={<Signals />} />
+                        <Route path="/settings" element={<SettingsPage />} />
+                    </Routes>
+                </main>
 
-                    <div className="py-4 px-3">
-                        <Menu
-                            mode="inline"
-                            selectedKeys={[current]}
-                            items={menuItems}
-                            onClick={({ key }) => setCurrent(key)}
-                            className="bg-transparent border-none"
-                            style={{
-                                color: '#94a3b8',
-                                fontSize: '14px',
-                            }}
-                        />
-                    </div>
-
-                    {/* Collapse button */}
-                    <button
-                        onClick={() => setCollapsed(!collapsed)}
-                        className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110"
-                        style={{
-                            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                            boxShadow: '0 0 15px rgba(99, 102, 241, 0.5)',
-                        }}
-                    >
-                        <svg
-                            className="w-3 h-3 text-white transition-transform duration-300"
-                            style={{ transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                    </button>
-                </Sider>
-
-                {/* Content area */}
-                <Layout className="flex-1">
-                    <Content className="p-6">
-                        <div className="min-h-full relative">
-                            {/* Content glow overlay */}
-                            <div
-                                className="absolute inset-0 pointer-events-none"
-                                style={{
-                                    background: 'radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%), radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.05) 0%, transparent 50%)',
-                                }}
-                            />
-
-                            <Routes>
-                                <Route path="/" element={<StockSearch />} />
-                                <Route path="/search" element={<StockSearch />} />
-                                <Route path="/screener" element={<Screener />} />
-                                <Route path="/stock/:code" element={<StockDetail />} />
-                                <Route path="/signals" element={<Signals />} />
-                                <Route path="/reports" element={<Signals />} />
-                                <Route path="/settings" element={<SettingsPage />} />
-                            </Routes>
-                        </div>
-                    </Content>
-                </Layout>
-            </Layout>
-        </Layout>
+                {/* Footer */}
+                <footer className="h-12 flex items-center justify-center border-t border-slate-800 text-xs text-slate-500">
+                    <p>缠论选股系统 v0.1.0 · 数据仅供参考，不构成投资建议</p>
+                </footer>
+            </div>
+        </div>
     )
 }
 
