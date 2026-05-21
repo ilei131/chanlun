@@ -1,11 +1,77 @@
-import { Card, Form, Input, InputNumber, Switch, Button } from 'antd'
-import { SaveOutlined, DatabaseOutlined, SettingOutlined, RestOutlined, SlidersOutlined } from '@ant-design/icons'
+import { useState, useEffect } from 'react'
+import { Card, Form, Input, InputNumber, Switch, Button, message } from 'antd'
+import { DatabaseOutlined, SaveOutlined, SettingOutlined, RestOutlined, SlidersOutlined, KeyOutlined } from '@ant-design/icons'
+import { authApi } from '@/api'
 
 function SettingsPage() {
     const [form] = Form.useForm()
+    const [tushareForm] = Form.useForm()
+    const [currentToken, setCurrentToken] = useState<string>('')
+    const [loading, setLoading] = useState(false)
+
+    // 加载当前用户的 tushare token
+    useEffect(() => {
+        loadUserToken()
+    }, [])
+
+    const loadUserToken = async () => {
+        try {
+            const user = authApi.getUser()
+            if (user?.tushare_token) {
+                setCurrentToken(user.tushare_token)
+                tushareForm.setFieldsValue({
+                    tushare_token: user.tushare_token
+                })
+            }
+        } catch (error) {
+            console.error('Failed to load tushare token:', error)
+        }
+    }
+
+    const handleSaveTushareToken = async (values: any) => {
+        setLoading(true)
+        try {
+            await authApi.updateTushareToken(values.tushare_token)
+            message.success('tushare token 更新成功')
+            setCurrentToken(values.tushare_token)
+
+            // 更新本地存储的用户信息
+            const user = authApi.getUser()
+            if (user) {
+                user.tushare_token = values.tushare_token
+                localStorage.setItem('user', JSON.stringify(user))
+            }
+        } catch (error: any) {
+            message.error(error.response?.data?.error || '更新失败')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const handleDeleteTushareToken = async () => {
+        setLoading(true)
+        try {
+            await authApi.deleteTushareToken()
+            message.success('tushare token 已删除')
+            setCurrentToken('')
+            tushareForm.resetFields()
+
+            // 更新本地存储的用户信息
+            const user = authApi.getUser()
+            if (user) {
+                user.tushare_token = undefined
+                localStorage.setItem('user', JSON.stringify(user))
+            }
+        } catch (error: any) {
+            message.error(error.response?.data?.error || '删除失败')
+        } finally {
+            setLoading(false)
+        }
+    }
 
     const onFinish = (values: any) => {
-        console.log('Settings saved:', values)
+        message.success('系统设置已保存')
+        console.log('System settings saved:', values)
     }
 
     return (
@@ -253,6 +319,103 @@ function SettingsPage() {
                         >
                             保存参数
                         </Button>
+                    </div>
+                </Form>
+            </Card>
+
+            {/* Tushare Token Settings Card */}
+            <Card
+                title={
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(34, 211, 238, 0.15)' }}>
+                            <KeyOutlined className="w-5 h-5 text-cyan-400" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-white">Tushare Token 配置</h2>
+                            <p className="text-xs text-gray-400">配置您的 Tushare API 访问令牌</p>
+                        </div>
+                    </div>
+                }
+                style={{
+                    background: 'linear-gradient(145deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
+                    border: '1px solid rgba(34, 211, 238, 0.15)',
+                    borderRadius: '16px',
+                }}
+            >
+                <Form
+                    form={tushareForm}
+                    layout="vertical"
+                    onFinish={handleSaveTushareToken}
+                >
+                    <div className="space-y-4">
+                        <div className="bg-cyan-900/20 border border-cyan-800/30 rounded-lg p-4">
+                            <p className="text-sm text-cyan-300 mb-2">什么是 Tushare Token？</p>
+                            <p className="text-xs text-gray-400">
+                                Tushare Token 是访问 Tushare 数据接口所需的认证令牌。您可以在{' '}
+                                <a href="https://tushare.pro/user/token" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">
+                                    Tushare 官网
+                                </a>
+                                {' '}获取您的个人 Token。
+                            </p>
+                        </div>
+
+                        <Form.Item
+                            label={
+                                <div className="flex items-center gap-2">
+                                    <KeyOutlined className="w-4 h-4 text-cyan-400" />
+                                    <span className="text-gray-300">Tushare Token</span>
+                                </div>
+                            }
+                            name="tushare_token"
+                            rules={[{ required: false, message: '请输入 Tushare Token' }]}
+                        >
+                            <Input.Password
+                                placeholder="输入您的 Tushare Token"
+                                style={{
+                                    backgroundColor: 'rgba(255,255,255,0.05)',
+                                    borderColor: 'rgba(255,255,255,0.1)',
+                                    color: '#fff',
+                                }}
+                            />
+                        </Form.Item>
+
+                        {currentToken && (
+                            <div className="bg-green-900/20 border border-green-800/30 rounded-lg p-3">
+                                <p className="text-sm text-green-300">
+                                    ✓ 当前已配置 Token：{currentToken.substring(0, 8)}...{currentToken.substring(currentToken.length - 8)}
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-3 mt-6">
+                            {currentToken && (
+                                <Button
+                                    danger
+                                    onClick={handleDeleteTushareToken}
+                                    loading={loading}
+                                    style={{
+                                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                                        borderColor: 'rgba(239, 68, 68, 0.3)',
+                                        color: '#ef4444',
+                                    }}
+                                >
+                                    删除 Token
+                                </Button>
+                            )}
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                loading={loading}
+                                icon={<SaveOutlined />}
+                                style={{
+                                    background: 'linear-gradient(135deg, #22d3ee, #06b6d4)',
+                                    borderColor: 'transparent',
+                                    boxShadow: '0 4px 20px rgba(34, 211, 238, 0.3)',
+                                }}
+                            >
+                                保存 Token
+                            </Button>
+                        </div>
                     </div>
                 </Form>
             </Card>

@@ -140,6 +140,7 @@ pub struct User {
     pub email: Option<String>,
     pub role: String,
     pub is_active: bool,
+    pub tushare_token: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -173,4 +174,5 @@ pub struct UserInfo {
     pub username: String,
     pub email: Option<String>,
     pub role: String,
+    pub tushare_token: Option<String>,
 }

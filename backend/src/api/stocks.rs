@@ -9,7 +9,19 @@ use sqlx::PgPool;
 use crate::algorithms::czsc_integration::{self, ChanlunAnalyzer};
 use crate::db::models::{Kline, NewStock, Stock};
 use crate::tushare::client::TushareClient;
+use crate::api::auth::JwtClaims;
+use actix_web::web::ReqData;
 use czsc_core::objects::bar::RawBar;
+
+/// 获取 TushareClient，优先使用用户的 token
+fn get_tushare_client(claims: Option<&JwtClaims>) -> TushareClient {
+    if let Some(token) = claims.and_then(|c| c.tushare_token.as_ref()) {
+        if !token.is_empty() {
+            return TushareClient::with_token(token);
+        }
+    }
+    TushareClient::new()
+}
 
 #[derive(Debug, Serialize)]
 pub struct SearchResult {
@@ -144,8 +156,25 @@ pub fn stocks_scope() -> Scope {
         .route("/sync", web::post().to(sync_stock_basic))
 }
 
+/// 从请求头中提取 JWT claims
+async fn extract_claims(
+    req: &actix_web::HttpRequest,
+) -> Option<JwtClaims> {
+    let auth_header = req.headers().get("Authorization")?;
+    let auth_str = auth_header.to_str().ok()?;
+    
+    if !auth_str.starts_with("Bearer ") {
+        return None;
+    }
+    
+    let token = &auth_str[7..];
+    let claims_result = crate::api::auth::verify_token(token).ok()?;
+    Some(claims_result.claims)
+}
+
 async fn search_stocks(
     pool: web::Data<PgPool>,
+    req: actix_web::HttpRequest,
     query: web::Query<SearchQuery>,
 ) -> actix_web::Result<HttpResponse> {
     let keyword = &query.keyword;
@@ -235,11 +264,12 @@ async fn search_stocks(
     }
 
     if !can_call_stock_basic() {
-        info!("[search_stocks] stock_basic接口调用频率超限，跳过Tushare查询");
+        info!("[search_stocks] stock_basic 接口调用频率超限，跳过 Tushare 查询");
         return Ok(HttpResponse::Ok().json(Vec::<SearchResult>::new()));
     }
 
-    let client = TushareClient::new();
+    let claims = extract_claims(&req).await;
+    let client = get_tushare_client(claims.as_ref());
     let result = client.search_stocks(keyword).await;
 
     match result {
@@ -278,6 +308,7 @@ pub struct SearchQuery {
 
 async fn get_stock_detail(
     pool: web::Data<PgPool>,
+    req: actix_web::HttpRequest,
     body: web::Json<StockDetailRequest>,
 ) -> actix_web::Result<HttpResponse> {
     let code = &body.code;
@@ -300,6 +331,9 @@ async fn get_stock_detail(
         .to_string();
     
     let mut start_date_str = default_start_date.clone();
+    
+    let claims = extract_claims(&req).await;
+    let client = get_tushare_client(claims.as_ref());
     
     let (stock, name, list_date, stock_type, mut kline_data) = match sqlx::query_as::<_, Stock>(
         "SELECT id, code, name, market, stock_type, list_date, delist_date, is_active, created_at, updated_at
@@ -388,7 +422,6 @@ async fn get_stock_detail(
     
     if kline_data.is_empty() {
         info!("[get_stock_detail] 本地 K 线数据为空，从 Tushare 获取");
-        let client = TushareClient::new();
         let kline_result = client
             .get_kline_data(&ts_code, &start_date_str, &end_date, period)
             .await;
@@ -766,8 +799,8 @@ fn get_stock_name_from_cache(ts_code: &str) -> String {
     format!("{}", code)
 }
 
-async fn get_stock_name(ts_code: &str, _kline_data: &[KlineResponse]) -> String {
-    let client = TushareClient::new();
+async fn get_stock_name(ts_code: &str, _kline_data: &[KlineResponse], claims: Option<&JwtClaims>) -> String {
+    let client = get_tushare_client(claims);
     match client
         .search_stocks(ts_code.split('.').next().unwrap_or(""))
         .await
@@ -775,7 +808,7 @@ async fn get_stock_name(ts_code: &str, _kline_data: &[KlineResponse]) -> String 
         Ok(stocks) => {
             if let Some(stock) = stocks.into_iter().find(|s| s.ts_code == ts_code) {
                 let mut cache = STOCK_INFO_CACHE.lock().unwrap();
-                // 更新缓存中的name
+                // 更新缓存中的 name
                 if let Some(existing) = cache.get_mut(ts_code) {
                     existing.0 = stock.name.clone();
                 }
@@ -967,17 +1000,21 @@ async fn delete_stock(
     Ok(HttpResponse::NoContent().finish())
 }
 
-async fn sync_stock_basic(pool: web::Data<PgPool>) -> actix_web::Result<HttpResponse> {
+async fn sync_stock_basic(
+    pool: web::Data<PgPool>,
+    req: actix_web::HttpRequest,
+) -> actix_web::Result<HttpResponse> {
     info!("[sync_stock_basic] 开始同步股票基础信息");
 
     if !can_call_stock_basic() {
         return Err(actix_web::error::ErrorTooManyRequests(
-            "stock_basic接口调用频率超限，请稍后再试",
+            "stock_basic 接口调用频率超限，请稍后再试",
         )
         .into());
     }
 
-    let client = TushareClient::new();
+    let claims = extract_claims(&req).await;
+    let client = get_tushare_client(claims.as_ref());
     let stocks_result = client.get_all_stocks().await;
 
     let stocks = match stocks_result {

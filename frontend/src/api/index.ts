@@ -273,6 +273,7 @@ export interface UserInfo {
     username: string
     email?: string
     role: string
+    tushare_token?: string
 }
 
 export interface LoginResponse {
@@ -315,4 +316,10 @@ export const authApi = {
     isAuthenticated: (): boolean => {
         return !!localStorage.getItem('token')
     },
+
+    updateTushareToken: (token: string) =>
+        api.put('/auth/tushare-token', { tushare_token: token }, { headers: getAuthHeaders() }),
+
+    deleteTushareToken: () =>
+        api.delete('/auth/tushare-token', { headers: getAuthHeaders() }),
 }

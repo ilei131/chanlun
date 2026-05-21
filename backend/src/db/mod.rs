@@ -65,6 +65,7 @@ pub async fn ensure_tables_exist(pool: &DbPool) -> Result<(), String> {
             email VARCHAR(100),
             role VARCHAR(20) NOT NULL DEFAULT 'user',
             is_active BOOLEAN DEFAULT true,
+            tushare_token VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )

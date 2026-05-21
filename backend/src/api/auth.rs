@@ -20,6 +20,7 @@ pub struct JwtClaims {
     pub sub: i32, // user id
     pub username: String,
     pub role: String,
+    pub tushare_token: Option<String>,
     pub exp: i64, // expiration timestamp
     pub iat: i64, // issued at
 }
@@ -33,6 +34,7 @@ fn generate_token(user: &User) -> Result<String, jsonwebtoken::errors::Error> {
         sub: user.id,
         username: user.username.clone(),
         role: user.role.clone(),
+        tushare_token: user.tushare_token.clone(),
         exp: expiration,
         iat: now,
     };
@@ -121,6 +123,7 @@ pub async fn register(pool: web::Data<PgPool>, body: web::Json<RegisterRequest>)
                 username: user.username,
                 email: user.email,
                 role: user.role,
+                tushare_token: user.tushare_token,
             };
             HttpResponse::Ok().json(serde_json::json!({
                 "message": "注册成功",
@@ -183,6 +186,7 @@ pub async fn login(pool: web::Data<PgPool>, body: web::Json<LoginRequest>) -> Ht
             username: user.username,
             email: user.email,
             role: user.role,
+            tushare_token: user.tushare_token,
         },
     };
 
@@ -208,6 +212,7 @@ pub async fn get_current_user(
                 username: u.username,
                 email: u.email,
                 role: u.role,
+                tushare_token: u.tushare_token,
             };
             HttpResponse::Ok().json(user_info)
         }
@@ -217,10 +222,79 @@ pub async fn get_current_user(
     }
 }
 
-/// 创建 auth 路由scope
+/// 更新 tushare token
+#[derive(Debug, Deserialize)]
+pub struct UpdateTushareTokenRequest {
+    pub tushare_token: String,
+}
+
+pub async fn update_tushare_token(
+    pool: web::Data<PgPool>,
+    claims: web::ReqData<JwtClaims>,
+    body: web::Json<UpdateTushareTokenRequest>,
+) -> HttpResponse {
+    let token = body.tushare_token.trim();
+
+    // 验证 token 格式（tushare token 通常是十六进制字符串）
+    if token.is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "token 不能为空"
+        }));
+    }
+
+    let now = Utc::now().naive_utc();
+    let result = sqlx::query("UPDATE users SET tushare_token = $1, updated_at = $2 WHERE id = $3")
+        .bind(token)
+        .bind(now)
+        .bind(claims.sub)
+        .execute(pool.get_ref())
+        .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+            "message": "tushare token 更新成功"
+        })),
+        Err(e) => {
+            log::error!("Failed to update tushare token: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "更新失败"
+            }))
+        }
+    }
+}
+
+/// 删除 tushare token
+pub async fn delete_tushare_token(
+    pool: web::Data<PgPool>,
+    claims: web::ReqData<JwtClaims>,
+) -> HttpResponse {
+    let now = Utc::now().naive_utc();
+    let result =
+        sqlx::query("UPDATE users SET tushare_token = NULL, updated_at = $1 WHERE id = $2")
+            .bind(now)
+            .bind(claims.sub)
+            .execute(pool.get_ref())
+            .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+            "message": "tushare token 已删除"
+        })),
+        Err(e) => {
+            log::error!("Failed to delete tushare token: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "删除失败"
+            }))
+        }
+    }
+}
+
+/// 创建 auth 路由 scope
 pub fn auth_scope() -> actix_web::Scope {
     web::scope("/auth")
         .route("/register", web::post().to(register))
         .route("/login", web::post().to(login))
         .route("/me", web::get().to(get_current_user))
+        .route("/tushare-token", web::put().to(update_tushare_token))
+        .route("/tushare-token", web::delete().to(delete_tushare_token))
 }
