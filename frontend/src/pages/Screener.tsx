@@ -263,7 +263,7 @@ function Screener() {
                 >
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-xs text-gray-500 mb-1">筛选条件</p>
+                            <p className="text-xs text-gray-400 mb-1">筛选条件</p>
                             <p className="text-2xl font-bold text-indigo-400">
                                 {[formValues.chanlunBuy.enabled, formValues.fractal.enabled, formValues.kdjCross.enabled, formValues.macdCross.enabled, formValues.priceRange.enabled].filter(Boolean).length}
                             </p>
@@ -282,7 +282,7 @@ function Screener() {
                 >
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-xs text-gray-500 mb-1">筛选结果</p>
+                            <p className="text-xs text-gray-400 mb-1">筛选结果</p>
                             <p className="text-2xl font-bold text-green-400">{total}</p>
                         </div>
                         <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16, 185, 129, 0.15)' }}>
@@ -299,7 +299,7 @@ function Screener() {
                 >
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-xs text-gray-500 mb-1">选股策略</p>
+                            <p className="text-xs text-gray-400 mb-1">选股策略</p>
                             <p className="text-2xl font-bold text-yellow-400">综合</p>
                         </div>
                         <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(234, 179, 8, 0.15)' }}>
@@ -316,7 +316,7 @@ function Screener() {
                 >
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-xs text-gray-500 mb-1">执行状态</p>
+                            <p className="text-xs text-gray-400 mb-1">执行状态</p>
                             <p className="text-2xl font-bold text-purple-400">{loading ? '运行中' : '就绪'}</p>
                         </div>
                         <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(168, 85, 247, 0.15)' }}>
@@ -642,7 +642,7 @@ function Screener() {
                                 style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff' }}
                             />
                             <span className="text-sm text-gray-400">元</span>
-                            <span className="text-gray-500">-</span>
+                            <span className="text-gray-400">-</span>
                             <span className="text-sm text-gray-400">最高价：</span>
                             <InputNumber
                                 min={0}
@@ -789,8 +789,11 @@ function Screener() {
                                         setPage(newPage)
                                         setPageSize(newPageSize)
                                     },
+                                    style: { color: '#94a3b8' },
                                 }}
-                                style={{ color: '#fff' }}
+                                style={{ color: '#e2e8f0', background: 'rgba(255,255,255,0.02)' }}
+                                bordered={false}
+                                className="dark-table"
                             />
                         </Spin>
                     </Card>

@@ -168,7 +168,7 @@ function Signals() {
                     >
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-xs text-gray-500 mb-1">{stat.label}</p>
+                                <p className="text-xs text-gray-400 mb-1">{stat.label}</p>
                                 <Statistic
                                     value={stat.value}
                                     style={{

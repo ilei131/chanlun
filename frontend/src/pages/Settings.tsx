@@ -19,7 +19,7 @@ function SettingsPage() {
                         </div>
                         <div>
                             <h2 className="text-lg font-bold text-white">系统设置</h2>
-                            <p className="text-xs text-gray-500">配置系统基础参数</p>
+                            <p className="text-xs text-gray-400">配置系统基础参数</p>
                         </div>
                     </div>
                 }
@@ -147,7 +147,7 @@ function SettingsPage() {
                         </div>
                         <div>
                             <h2 className="text-lg font-bold text-white">算法参数</h2>
-                            <p className="text-xs text-gray-500">配置缠论分析算法参数</p>
+                            <p className="text-xs text-gray-400">配置缠论分析算法参数</p>
                         </div>
                     </div>
                 }

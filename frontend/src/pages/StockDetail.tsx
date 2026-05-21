@@ -491,7 +491,7 @@ function StockDetail() {
             <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900">
                 <div className="w-full max-w-md mx-4">
                     <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl p-6 border border-slate-700/50 text-center">
-                        <BarChart3 className="w-12 h-12 text-slate-500 mx-auto mb-4" />
+                        <BarChart3 className="w-12 h-12 text-slate-400 mx-auto mb-4" />
                         <p className="text-slate-400 mb-4">无法获取股票数据</p>
                         <button
                             onClick={() => navigate('/')}
@@ -729,7 +729,7 @@ function StockDetail() {
 
             <footer className="border-t border-slate-800 mt-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                    <div className="text-center text-sm text-slate-500">
+                    <div className="text-center text-sm text-slate-400">
                         <p>缠论分析平台 - 基于缠论理论的专业股票技术分析工具</p>
                         <p className="mt-1">数据仅供参考，不构成投资建议</p>
                     </div>

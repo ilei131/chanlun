@@ -92,7 +92,7 @@ function App() {
                         </div>
                         <div>
                             <h1 className="text-base font-bold text-white">缠论选股系统</h1>
-                            <p className="text-xs text-slate-500">智能量化分析</p>
+                            <p className="text-xs text-slate-400">智能量化分析</p>
                         </div>
                     </div>
 
@@ -105,8 +105,8 @@ function App() {
                                     key={item.path}
                                     href={item.path}
                                     className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive
-                                            ? 'text-white'
-                                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                                        ? 'text-white'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                                         }`}
                                     style={
                                         isActive
@@ -126,7 +126,7 @@ function App() {
 
                     {/* Version */}
                     <div className="px-6 py-4 border-t border-slate-800/50">
-                        <div className="flex items-center justify-between text-xs text-slate-500">
+                        <div className="flex items-center justify-between text-xs text-slate-400">
                             <span>v0.1.0</span>
                             <div className="flex items-center gap-1.5">
                                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -179,8 +179,8 @@ function App() {
                                         key={item.path}
                                         href={item.path}
                                         className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive
-                                                ? 'text-white'
-                                                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                                            ? 'text-white'
+                                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                                             }`}
                                         style={
                                             isActive
@@ -253,7 +253,7 @@ function App() {
                                 >
                                     <div className="px-4 py-3 border-b border-slate-700/50">
                                         <p className="text-sm text-white font-medium">{user?.username}</p>
-                                        <p className="text-xs text-slate-500 capitalize">{user?.role || 'user'}</p>
+                                        <p className="text-xs text-slate-400 capitalize">{user?.role || 'user'}</p>
                                     </div>
                                     <div className="py-1">
                                         <a
@@ -291,7 +291,7 @@ function App() {
                 </main>
 
                 {/* Footer */}
-                <footer className="h-12 flex items-center justify-center border-t border-slate-800 text-xs text-slate-500">
+                <footer className="h-12 flex items-center justify-center border-t border-slate-800 text-xs text-slate-400">
                     <p>缠论选股系统 v0.1.0 · 数据仅供参考，不构成投资建议</p>
                 </footer>
             </div>

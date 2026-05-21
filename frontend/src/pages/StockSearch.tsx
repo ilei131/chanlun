@@ -163,7 +163,7 @@ function StockSearch() {
                     gap: '8px',
                     marginTop: '16px'
                 }}>
-                    <span style={{ color: '#6b7280', fontSize: '13px' }}>热门股票:</span>
+                    <span style={{ color: '#94a3b8', fontSize: '13px' }}>热门股票:</span>
                     {hotStocks.map((code) => (
                         <button
                             key={code}
