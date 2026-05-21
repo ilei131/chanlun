@@ -146,9 +146,16 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
             scaleMargins: { top: 0.85, bottom: 0 },
         });
 
+        const volumeValues = sortedKline.map(k => k.volume);
+        const sortedVolumes = [...volumeValues].sort((a, b) => a - b);
+        const q1 = sortedVolumes[Math.floor(sortedVolumes.length * 0.25)];
+        const q3 = sortedVolumes[Math.floor(sortedVolumes.length * 0.75)];
+        const iqr = q3 - q1;
+        const upperBound = q3 + iqr * 1.5;
+
         const volumeData = sortedKline.map((item) => ({
             time: formatDate(item.date) as Time,
-            value: item.volume,
+            value: item.volume > upperBound ? upperBound : item.volume,
             color: item.close >= item.open ? 'rgba(239,68,68,0.4)' : 'rgba(34,197,94,0.4)',
         }));
 
@@ -228,7 +235,7 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
         // 只绘制最近的一个中枢
         if (zsList.length > 0) {
             const zs = zsList[zsList.length - 1];
-            
+
             // 绘制中枢区域背景
             const bgColor = 'rgba(59,130,246,0.15)';
             const bgSeries = chart.addHistogramSeries({
@@ -319,7 +326,7 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
 
                             const startTime = formatDate(kline[biStartIdx].date) as Time;
                             const endTime = formatDate(kline[biEndIdx].date) as Time;
-                            
+
                             if (startTime === endTime) {
                                 biLine.setData([{ time: startTime, value: startPrice }]);
                             } else if (startTime < endTime) {

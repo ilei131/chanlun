@@ -139,8 +139,11 @@ function StockDetail() {
     const calculateMonthKlineFromDaily = (dailyKline: KlineData[]): KlineData[] => {
         const monthlyMap = new Map<string, KlineData>()
 
-        dailyKline.forEach(kline => {
+        dailyKline.forEach((kline) => {
             const month = getMonthFromDate(kline.date)
+            const volume = typeof kline.volume === 'string' ? parseFloat(kline.volume) : kline.volume
+            const numVolume = volume || 0
+
             if (!monthlyMap.has(month)) {
                 monthlyMap.set(month, {
                     date: month + '01',
@@ -148,14 +151,14 @@ function StockDetail() {
                     high: kline.high,
                     low: kline.low,
                     close: kline.close,
-                    volume: kline.volume,
+                    volume: numVolume,
                 })
             } else {
                 const existing = monthlyMap.get(month)!
                 existing.high = Math.max(existing.high, kline.high)
                 existing.low = Math.min(existing.low, kline.low)
                 existing.close = kline.close
-                existing.volume += kline.volume
+                existing.volume += numVolume
             }
         })
 
@@ -252,7 +255,9 @@ function StockDetail() {
     }
 
     const prepareKlineData = () => {
-        if (!detail?.kline_data.length) return { kline: [], ma: { dates: [], ma5: [], ma10: [], ma20: [], ma60: [] }, zsList: [] }
+        if (!detail?.kline_data.length) {
+            return { kline: [], ma: { dates: [], ma5: [], ma10: [], ma20: [], ma60: [] }, zsList: [] }
+        }
 
         let kline: KlineData[] = detail.kline_data.map(k => ({
             date: k.trade_date,
@@ -266,21 +271,23 @@ function StockDetail() {
         kline = kline.sort((a, b) => a.date.localeCompare(b.date))
 
         if (period === 'monthly' && dailyDetail?.kline_data.length) {
-            const dailyKline: KlineData[] = dailyDetail.kline_data.map(k => ({
-                date: k.trade_date,
-                open: k.open,
-                high: k.high,
-                low: k.low,
-                close: k.close,
-                volume: k.volume,
-            })).sort((a, b) => a.date.localeCompare(b.date))
+            const dailyKline: KlineData[] = dailyDetail.kline_data.map(k => {
+                const volume = typeof k.volume === 'string' ? parseFloat(k.volume) : k.volume;
+                return {
+                    date: k.trade_date,
+                    open: k.open,
+                    high: k.high,
+                    low: k.low,
+                    close: k.close,
+                    volume: (volume || 0) * 100,  // 日线成交量单位是手，转换为股
+                };
+            }).sort((a, b) => a.date.localeCompare(b.date))
 
             const monthlyKline = calculateMonthKlineFromDaily(dailyKline)
 
             if (monthlyKline.length > 0) {
                 const lastMonthFromApi = kline[kline.length - 1]?.date.slice(0, 6)
                 const lastMonthFromDaily = monthlyKline[monthlyKline.length - 1]?.date.slice(0, 6)
-
                 if (lastMonthFromDaily !== lastMonthFromApi) {
                     const currentMonthKline = monthlyKline.filter(m => m.date.slice(0, 6) === lastMonthFromDaily)
                     if (currentMonthKline.length > 0) {
@@ -320,7 +327,6 @@ function StockDetail() {
                 low: bi.low,
             })),
         }))
-
         return { kline, ma, zsList }
     }
 
