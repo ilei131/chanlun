@@ -12,13 +12,11 @@ pub struct FX {
     pub confidence: f64,
 }
 
-pub struct FractalDetector {
-    min_bar_count: usize,
-}
+pub struct FractalDetector;
 
 impl FractalDetector {
-    pub fn new(min_bar_count: usize) -> Self {
-        Self { min_bar_count }
+    pub fn new() -> Self {
+        Self
     }
 
     pub fn detect(&self, bars: &[ProcessedBar]) -> Vec<FX> {

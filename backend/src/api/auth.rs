@@ -1,10 +1,11 @@
 // src/api/auth.rs
-use actix_web::{web, HttpResponse};
+use actix_web::{dev::Payload, web, FromRequest, HttpRequest, HttpResponse};
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
 use chrono::Utc;
+use futures::future::{ready, Ready};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -23,6 +24,59 @@ pub struct JwtClaims {
     pub tushare_token: Option<String>,
     pub exp: i64, // expiration timestamp
     pub iat: i64, // issued at
+}
+
+impl FromRequest for JwtClaims {
+    type Error = actix_web::Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
+        log::info!("JwtClaims::from_request called");
+
+        let auth_header = match req.headers().get("Authorization") {
+            Some(h) => h,
+            None => {
+                log::warn!("No Authorization header found");
+                return ready(Err(actix_web::error::ErrorUnauthorized(
+                    "Missing Authorization header",
+                )));
+            }
+        };
+
+        let auth_str = match auth_header.to_str() {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("Invalid Authorization header: {}", e);
+                return ready(Err(actix_web::error::ErrorUnauthorized(
+                    "Invalid Authorization header",
+                )));
+            }
+        };
+
+        if !auth_str.starts_with("Bearer ") {
+            log::warn!("Authorization header doesn't start with Bearer");
+            return ready(Err(actix_web::error::ErrorUnauthorized(
+                "Invalid token format",
+            )));
+        }
+
+        let token = &auth_str[7..];
+        log::info!("Token received (length: {})", token.len());
+
+        match verify_token(token) {
+            Ok(token_data) => {
+                log::info!(
+                    "Token verified successfully for user: {}",
+                    token_data.claims.username
+                );
+                ready(Ok(token_data.claims))
+            }
+            Err(e) => {
+                log::error!("Token verification failed: {}", e);
+                ready(Err(actix_web::error::ErrorUnauthorized("Invalid token")))
+            }
+        }
+    }
 }
 
 /// 生成 JWT token
@@ -194,10 +248,7 @@ pub async fn login(pool: web::Data<PgPool>, body: web::Json<LoginRequest>) -> Ht
 }
 
 /// 获取当前用户信息
-pub async fn get_current_user(
-    pool: web::Data<PgPool>,
-    claims: web::ReqData<JwtClaims>,
-) -> HttpResponse {
+pub async fn get_current_user(pool: web::Data<PgPool>, claims: JwtClaims) -> HttpResponse {
     let user: Option<User> =
         sqlx::query_as("SELECT * FROM users WHERE id = $1 AND is_active = true")
             .bind(claims.sub)
@@ -230,19 +281,47 @@ pub struct UpdateTushareTokenRequest {
 
 pub async fn update_tushare_token(
     pool: web::Data<PgPool>,
-    claims: web::ReqData<JwtClaims>,
+    claims: JwtClaims,
     body: web::Json<UpdateTushareTokenRequest>,
 ) -> HttpResponse {
+    // 记录请求到达
+    log::info!("update_tushare_token request received");
+
+    // 记录用户信息
+    log::info!(
+        "User ID: {}, Username: {:?}, Tushare token in claims: {:?}",
+        claims.sub,
+        claims.username,
+        claims.tushare_token
+    );
+
+    // 记录请求体
+    log::info!("Request body: {:?}", body);
+
     let token = body.tushare_token.trim();
 
     // 验证 token 格式（tushare token 通常是十六进制字符串）
     if token.is_empty() {
+        log::warn!("Empty token received from user {}", claims.sub);
         return HttpResponse::BadRequest().json(serde_json::json!({
             "error": "token 不能为空"
         }));
     }
 
+    // 记录 token（脱敏显示）
+    log::info!(
+        "Token length: {}, First 8 chars: {}",
+        token.len(),
+        &token[0..std::cmp::min(8, token.len())]
+    );
+
     let now = Utc::now().naive_utc();
+    log::info!(
+        "Attempting to update tushare_token for user {} at {}",
+        claims.sub,
+        now
+    );
+
     let result = sqlx::query("UPDATE users SET tushare_token = $1, updated_at = $2 WHERE id = $3")
         .bind(token)
         .bind(now)
@@ -251,11 +330,23 @@ pub async fn update_tushare_token(
         .await;
 
     match result {
-        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
-            "message": "tushare token 更新成功"
-        })),
+        Ok(res) => {
+            log::info!(
+                "tushare token updated successfully for user {}: rows affected = {}",
+                claims.sub,
+                res.rows_affected()
+            );
+            HttpResponse::Ok().json(serde_json::json!({
+                "message": "tushare token 更新成功"
+            }))
+        }
         Err(e) => {
-            log::error!("Failed to update tushare token: {}", e);
+            log::error!(
+                "Failed to update tushare token for user {}: {}",
+                claims.sub,
+                e
+            );
+            log::error!("Error details: {:?}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({
                 "error": "更新失败"
             }))
@@ -264,11 +355,20 @@ pub async fn update_tushare_token(
 }
 
 /// 删除 tushare token
-pub async fn delete_tushare_token(
-    pool: web::Data<PgPool>,
-    claims: web::ReqData<JwtClaims>,
-) -> HttpResponse {
+pub async fn delete_tushare_token(pool: web::Data<PgPool>, claims: JwtClaims) -> HttpResponse {
+    // 记录请求到达
+    log::info!("delete_tushare_token request received");
+
+    // 记录用户信息
+    log::info!("User ID: {}, Username: {:?}", claims.sub, claims.username);
+
     let now = Utc::now().naive_utc();
+    log::info!(
+        "Attempting to delete tushare_token for user {} at {}",
+        claims.sub,
+        now
+    );
+
     let result =
         sqlx::query("UPDATE users SET tushare_token = NULL, updated_at = $1 WHERE id = $2")
             .bind(now)
@@ -277,11 +377,23 @@ pub async fn delete_tushare_token(
             .await;
 
     match result {
-        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
-            "message": "tushare token 已删除"
-        })),
+        Ok(res) => {
+            log::info!(
+                "tushare token deleted successfully for user {}: rows affected = {}",
+                claims.sub,
+                res.rows_affected()
+            );
+            HttpResponse::Ok().json(serde_json::json!({
+                "message": "tushare token 已删除"
+            }))
+        }
         Err(e) => {
-            log::error!("Failed to delete tushare token: {}", e);
+            log::error!(
+                "Failed to delete tushare token for user {}: {}",
+                claims.sub,
+                e
+            );
+            log::error!("Error details: {:?}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({
                 "error": "删除失败"
             }))

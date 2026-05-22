@@ -10,7 +10,6 @@ use crate::algorithms::czsc_integration::{self, ChanlunAnalyzer};
 use crate::db::models::{Kline, NewStock, Stock};
 use crate::tushare::client::TushareClient;
 use crate::api::auth::JwtClaims;
-use actix_web::web::ReqData;
 use czsc_core::objects::bar::RawBar;
 
 /// 获取 TushareClient，优先使用用户的 token
@@ -702,122 +701,6 @@ fn can_call_stock_basic() -> bool {
         );
         false
     }
-}
-
-async fn fetch_stock_basic_info(
-    ts_code: &str,
-    client: &TushareClient,
-) -> (
-    String,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    // 先检查缓存
-    {
-        let cache = STOCK_INFO_CACHE.lock().unwrap();
-        if let Some(cached) = cache.get(ts_code) {
-            info!("[fetch_stock_basic_info] 命中缓存, ts_code={}", ts_code);
-            return cached.clone();
-        }
-    }
-
-    info!(
-        "[fetch_stock_basic_info] 缓存未命中，开始获取股票基本信息, ts_code={}",
-        ts_code
-    );
-    let stock_code = ts_code.split('.').next().unwrap_or("");
-    info!("[fetch_stock_basic_info] 解析后的股票代码={}", stock_code);
-
-    if !can_call_stock_basic() {
-        info!("[fetch_stock_basic_info] stock_basic接口调用频率超限，无法从Tushare获取股票信息");
-        let result = (stock_code.to_string(), None, None, None, None);
-        return result;
-    }
-
-    let result = match client.search_stocks(stock_code).await {
-        Ok(stocks) => {
-            info!(
-                "[fetch_stock_basic_info] Tushare返回 {} 条股票信息",
-                stocks.len()
-            );
-            if let Some(stock) = stocks.into_iter().find(|s| s.ts_code == ts_code) {
-                info!("[fetch_stock_basic_info] 找到匹配股票: name={}", stock.name);
-                let stock_type = if ts_code.ends_with(".SH") {
-                    Some("沪市A股".to_string())
-                } else if ts_code.ends_with(".SZ") {
-                    Some("深市A股".to_string())
-                } else if ts_code.ends_with(".BJ") {
-                    Some("北交所".to_string())
-                } else {
-                    None
-                };
-                let result = (
-                    stock.name,
-                    stock.area,
-                    stock.industry,
-                    stock.list_date,
-                    stock_type,
-                );
-                // 写入缓存
-                {
-                    let mut cache = STOCK_INFO_CACHE.lock().unwrap();
-                    cache.insert(ts_code.to_string(), result.clone());
-                    info!("[fetch_stock_basic_info] 已写入缓存, ts_code={}", ts_code);
-                }
-                return result;
-            } else {
-                info!(
-                    "[fetch_stock_basic_info] 未找到匹配股票 ts_code={}",
-                    ts_code
-                );
-            }
-        }
-        Err(e) => {
-            info!("[fetch_stock_basic_info] Tushare API 调用失败: {}", e);
-        }
-    };
-
-    let code_only = ts_code.split('.').next().unwrap_or(ts_code);
-    let result = (code_only.to_string(), None, None, None, None);
-    info!(
-        "[fetch_stock_basic_info] 返回默认信息, code_only={}",
-        code_only
-    );
-    result
-}
-
-fn get_stock_name_from_cache(ts_code: &str) -> String {
-    let cache = STOCK_INFO_CACHE.lock().unwrap();
-
-    if let Some((name, _, _, _, _)) = cache.get(ts_code) {
-        return name.clone();
-    }
-
-    let code = ts_code.split('.').next().unwrap_or("");
-    format!("{}", code)
-}
-
-async fn get_stock_name(ts_code: &str, _kline_data: &[KlineResponse], claims: Option<&JwtClaims>) -> String {
-    let client = get_tushare_client(claims);
-    match client
-        .search_stocks(ts_code.split('.').next().unwrap_or(""))
-        .await
-    {
-        Ok(stocks) => {
-            if let Some(stock) = stocks.into_iter().find(|s| s.ts_code == ts_code) {
-                let mut cache = STOCK_INFO_CACHE.lock().unwrap();
-                // 更新缓存中的 name
-                if let Some(existing) = cache.get_mut(ts_code) {
-                    existing.0 = stock.name.clone();
-                }
-                return stock.name;
-            }
-        }
-        Err(_) => {}
-    }
-    ts_code.to_string()
 }
 
 fn calculate_macd(kline_data: &[KlineResponse]) -> Vec<MacdData> {

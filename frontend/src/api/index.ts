@@ -1,6 +1,8 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
+// 使用相对路径，前端会自动使用当前页面的域名/IP来访问API
+// 生产环境可以通过 VITE_API_URL 环境变量配置
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
 const api = axios.create({
     baseURL: API_BASE_URL,
