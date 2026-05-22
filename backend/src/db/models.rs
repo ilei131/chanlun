@@ -141,6 +141,9 @@ pub struct User {
     pub role: String,
     pub is_active: bool,
     pub tushare_token: Option<String>,
+    pub gemini_token: Option<String>,
+    pub openai_token: Option<String>,
+    pub preferred_ai_provider: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -175,4 +178,44 @@ pub struct UserInfo {
     pub email: Option<String>,
     pub role: String,
     pub tushare_token: Option<String>,
+    pub gemini_token: Option<String>,
+    pub openai_token: Option<String>,
+    pub preferred_ai_provider: Option<String>,
+}
+
+/// 分析报告模型
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct StockAnalysisReport {
+    pub id: i64,
+    pub user_id: i32,
+    pub stock_code: String,
+    pub stock_name: String,
+    pub market: String,
+    pub analysis_date: NaiveDate,
+    pub ai_provider: String,
+    pub report_content: String,
+    pub summary: Option<String>,
+    pub investment_rating: Option<String>,
+    pub target_price: Option<f64>,
+    pub confidence_score: Option<f64>,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+/// 创建分析报告请求
+#[derive(Debug, Deserialize)]
+pub struct CreateReportRequest {
+    pub stock_code: String,
+    pub market: Option<String>,
+}
+
+/// 分析报告列表响应
+#[derive(Debug, Serialize)]
+pub struct ReportListResponse {
+    pub reports: Vec<StockAnalysisReport>,
+    pub total: i64,
+    pub page: i32,
+    pub page_size: i32,
 }

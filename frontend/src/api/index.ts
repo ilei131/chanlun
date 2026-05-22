@@ -276,6 +276,9 @@ export interface UserInfo {
     email?: string
     role: string
     tushare_token?: string
+    gemini_token?: string
+    openai_token?: string
+    preferred_ai_provider?: string
 }
 
 export interface LoginResponse {
@@ -324,4 +327,56 @@ export const authApi = {
 
     deleteTushareToken: () =>
         api.delete('/auth/tushare-token', { headers: getAuthHeaders() }),
+
+    updateAiToken: (data: { gemini_token?: string; openai_token?: string; preferred_ai_provider?: string }) =>
+        api.put('/auth/ai-token', data, { headers: getAuthHeaders() }),
+
+    deleteAiToken: () =>
+        api.delete('/auth/ai-token', { headers: getAuthHeaders() }),
+}
+
+// 分析报告相关接口
+export interface StockAnalysisReport {
+    id: number
+    user_id: number
+    stock_code: string
+    stock_name: string
+    market: string
+    analysis_date: string
+    ai_provider: string
+    report_content: string
+    summary?: string
+    investment_rating?: string
+    target_price?: number
+    confidence_score?: number
+    status: string
+    error_message?: string
+    created_at: string
+    updated_at: string
+}
+
+export interface CreateReportRequest {
+    stock_code: string
+    market?: string
+}
+
+export interface ReportListResponse {
+    reports: StockAnalysisReport[]
+    total: number
+    page: number
+    page_size: number
+}
+
+export const analysisApi = {
+    createReport: (data: CreateReportRequest) =>
+        api.post<{ success: boolean; message: string; report_id?: number }>('/analysis/report', data, { headers: getAuthHeaders() }),
+
+    getReports: (params?: { page?: number; page_size?: number; stock_code?: string }) =>
+        api.get<ReportListResponse>('/analysis/reports', { headers: getAuthHeaders(), params }),
+
+    getReport: (id: number) =>
+        api.get<StockAnalysisReport>(`/analysis/reports/${id}`, { headers: getAuthHeaders() }),
+
+    deleteReport: (id: number) =>
+        api.delete<{ success: boolean; message: string }>(`/analysis/reports/${id}`, { headers: getAuthHeaders() }),
 }

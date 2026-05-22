@@ -5,6 +5,7 @@ import StockDetail from '@/pages/StockDetail'
 import Signals from '@/pages/Signals'
 import SettingsPage from '@/pages/Settings'
 import Login from '@/pages/Login'
+import AnalysisReport from '@/pages/AnalysisReport'
 import { useState, useEffect } from 'react'
 import { authApi } from '@/api'
 import { Menu, X, User, LogOut, Settings, ChevronDown } from 'lucide-react'
@@ -285,7 +286,7 @@ function App() {
                         <Route path="/screener" element={<Screener />} />
                         <Route path="/stock/:code" element={<StockDetail />} />
                         <Route path="/signals" element={<Signals />} />
-                        <Route path="/reports" element={<Signals />} />
+                        <Route path="/reports" element={<AnalysisReport />} />
                         <Route path="/settings" element={<SettingsPage />} />
                     </Routes>
                 </main>

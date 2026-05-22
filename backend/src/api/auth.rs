@@ -178,6 +178,9 @@ pub async fn register(pool: web::Data<PgPool>, body: web::Json<RegisterRequest>)
                 email: user.email,
                 role: user.role,
                 tushare_token: user.tushare_token,
+                gemini_token: user.gemini_token,
+                openai_token: user.openai_token,
+                preferred_ai_provider: user.preferred_ai_provider,
             };
             HttpResponse::Ok().json(serde_json::json!({
                 "message": "注册成功",
@@ -241,6 +244,9 @@ pub async fn login(pool: web::Data<PgPool>, body: web::Json<LoginRequest>) -> Ht
             email: user.email,
             role: user.role,
             tushare_token: user.tushare_token,
+            gemini_token: user.gemini_token,
+            openai_token: user.openai_token,
+            preferred_ai_provider: user.preferred_ai_provider,
         },
     };
 
@@ -264,6 +270,9 @@ pub async fn get_current_user(pool: web::Data<PgPool>, claims: JwtClaims) -> Htt
                 email: u.email,
                 role: u.role,
                 tushare_token: u.tushare_token,
+                gemini_token: u.gemini_token,
+                openai_token: u.openai_token,
+                preferred_ai_provider: u.preferred_ai_provider,
             };
             HttpResponse::Ok().json(user_info)
         }
@@ -401,6 +410,99 @@ pub async fn delete_tushare_token(pool: web::Data<PgPool>, claims: JwtClaims) ->
     }
 }
 
+/// 更新 AI token 请求
+#[derive(Debug, Deserialize)]
+pub struct UpdateAiTokenRequest {
+    pub gemini_token: Option<String>,
+    pub openai_token: Option<String>,
+    pub preferred_ai_provider: Option<String>,
+}
+
+/// 更新 AI token
+pub async fn update_ai_token(
+    pool: web::Data<PgPool>,
+    claims: JwtClaims,
+    body: web::Json<UpdateAiTokenRequest>,
+) -> HttpResponse {
+    log::info!("update_ai_token request received for user {}", claims.sub);
+
+    let now = Utc::now().naive_utc();
+
+    let result = sqlx::query(
+        "UPDATE users 
+         SET gemini_token = COALESCE($1, gemini_token), 
+             openai_token = COALESCE($2, openai_token),
+             preferred_ai_provider = COALESCE($3, preferred_ai_provider),
+             updated_at = $4 
+         WHERE id = $5",
+    )
+    .bind(&body.gemini_token)
+    .bind(&body.openai_token)
+    .bind(&body.preferred_ai_provider)
+    .bind(now)
+    .bind(claims.sub)
+    .execute(pool.get_ref())
+    .await;
+
+    match result {
+        Ok(res) => {
+            log::info!(
+                "AI token updated successfully for user {}: rows affected = {}",
+                claims.sub,
+                res.rows_affected()
+            );
+            HttpResponse::Ok().json(serde_json::json!({
+                "message": "AI token 更新成功"
+            }))
+        }
+        Err(e) => {
+            log::error!("Failed to update AI token for user {}: {}", claims.sub, e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "更新失败"
+            }))
+        }
+    }
+}
+
+/// 删除 AI token
+pub async fn delete_ai_token(pool: web::Data<PgPool>, claims: JwtClaims) -> HttpResponse {
+    log::info!("delete_ai_token request received for user {}", claims.sub);
+
+    let now = Utc::now().naive_utc();
+
+    let result = sqlx::query(
+        "UPDATE users 
+         SET gemini_token = NULL, 
+             openai_token = NULL,
+             preferred_ai_provider = NULL,
+             updated_at = $1 
+         WHERE id = $2",
+    )
+    .bind(now)
+    .bind(claims.sub)
+    .execute(pool.get_ref())
+    .await;
+
+    match result {
+        Ok(res) => {
+            log::info!(
+                "AI token deleted successfully for user {}: rows affected = {}",
+                claims.sub,
+                res.rows_affected()
+            );
+            HttpResponse::Ok().json(serde_json::json!({
+                "message": "AI token 已删除"
+            }))
+        }
+        Err(e) => {
+            log::error!("Failed to delete AI token for user {}: {}", claims.sub, e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "删除失败"
+            }))
+        }
+    }
+}
+
 /// 创建 auth 路由 scope
 pub fn auth_scope() -> actix_web::Scope {
     web::scope("/auth")
@@ -409,4 +511,6 @@ pub fn auth_scope() -> actix_web::Scope {
         .route("/me", web::get().to(get_current_user))
         .route("/tushare-token", web::put().to(update_tushare_token))
         .route("/tushare-token", web::delete().to(delete_tushare_token))
+        .route("/ai-token", web::put().to(update_ai_token))
+        .route("/ai-token", web::delete().to(delete_ai_token))
 }

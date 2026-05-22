@@ -1,8 +1,9 @@
 // src/lib.rs
 //! 缠论选股系统核心库
 
-pub mod api;
+pub mod ai;
 pub mod algorithms;
+pub mod api;
 pub mod cache;
 pub mod config;
 pub mod db;
@@ -23,29 +24,30 @@ pub async fn run_server() -> std::io::Result<()> {
     let config = Config::from_env().expect("Failed to load config");
 
     info!("Starting ChanLun Server...");
-    info!("Database: {}://{}:{}@{}/{}",
-        config.db_protocol,
-        config.db_user,
-        "***",
-        config.db_host,
-        config.db_name
+    info!(
+        "Database: {}://{}:{}@{}/{}",
+        config.db_protocol, config.db_user, "***", config.db_host, config.db_name
     );
 
-    let pool = init_pool(&config).await
-        .map_err(|e| {
-            log::error!("Failed to initialize database: {}", e);
-            std::io::Error::new(std::io::ErrorKind::Other, e)
-        })?;
+    let pool = init_pool(&config).await.map_err(|e| {
+        log::error!("Failed to initialize database: {}", e);
+        std::io::Error::new(std::io::ErrorKind::Other, e)
+    })?;
 
     info!("Database initialized successfully.");
-    info!("Server ready. Starting HTTP server on {}:{}", config.host, config.port);
+    info!(
+        "Server ready. Starting HTTP server on {}:{}",
+        config.host, config.port
+    );
 
     HttpServer::new(move || {
         App::new()
-            .wrap(Cors::default()
-                .allow_any_origin()
-                .allow_any_method()
-                .allow_any_header())
+            .wrap(
+                Cors::default()
+                    .allow_any_origin()
+                    .allow_any_method()
+                    .allow_any_header(),
+            )
             .app_data(actix_web::web::Data::new(pool.clone()))
             .configure(api::init_routes)
     })

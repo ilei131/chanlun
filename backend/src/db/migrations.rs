@@ -334,6 +334,50 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_screener_ext_macd ON stock_screener_results_ext(macd_cross_enabled, macd_cross_period);
         "#,
     },
+    Migration {
+        version: 15,
+        name: "add_ai_tokens_to_users",
+        sql: r#"
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS gemini_token VARCHAR(255);
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_token VARCHAR(255);
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_ai_provider VARCHAR(20);
+        "#,
+    },
+    Migration {
+        version: 16,
+        name: "create_stock_analysis_reports_table",
+        sql: r#"
+            CREATE TABLE IF NOT EXISTS stock_analysis_reports (
+                id BIGSERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                stock_code VARCHAR(10) NOT NULL,
+                stock_name VARCHAR(100) NOT NULL,
+                market VARCHAR(20) NOT NULL,
+                analysis_date DATE NOT NULL,
+                ai_provider VARCHAR(20) NOT NULL,
+                report_content TEXT NOT NULL,
+                summary TEXT,
+                investment_rating VARCHAR(20),
+                target_price DECIMAL(12, 2),
+                confidence_score DECIMAL(5, 2),
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        "#,
+    },
+    Migration {
+        version: 17,
+        name: "create_reports_indexes",
+        sql: r#"
+            CREATE INDEX IF NOT EXISTS idx_reports_user_id ON stock_analysis_reports(user_id);
+            CREATE INDEX IF NOT EXISTS idx_reports_stock_code ON stock_analysis_reports(stock_code);
+            CREATE INDEX IF NOT EXISTS idx_reports_analysis_date ON stock_analysis_reports(analysis_date DESC);
+            CREATE INDEX IF NOT EXISTS idx_reports_status ON stock_analysis_reports(status);
+            CREATE INDEX IF NOT EXISTS idx_reports_created_at ON stock_analysis_reports(created_at DESC);
+        "#,
+    },
 ];
 
 /// 初始化迁移历史表
