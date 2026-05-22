@@ -1,7 +1,7 @@
 // src/tushare/client.rs
 use log::info;
 use reqwest::{Client, Error as ReqwestError};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 
 #[derive(Debug, Deserialize)]
@@ -29,7 +29,7 @@ pub struct StockBasic {
     pub delist_date: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct KlineData {
     pub ts_code: String,
     pub trade_date: String,

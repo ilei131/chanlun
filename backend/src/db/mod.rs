@@ -72,13 +72,13 @@ pub async fn init_pool(config: &Config) -> Result<DbPool, String> {
     ensure_tables_exist(&pool).await?;
 
     // 初始化 admin 用户
-    init_admin_user(&pool).await?;
+    init_admin_user(&pool, &config.admin_default_password).await?;
 
     Ok(pool)
 }
 
 /// 初始化 admin 用户
-pub async fn init_admin_user(pool: &DbPool) -> Result<(), String> {
+pub async fn init_admin_user(pool: &DbPool, password: &str) -> Result<(), String> {
     // 检查 admin 用户是否已存在
     let existing: Option<(i32,)> = sqlx::query_as("SELECT id FROM users WHERE username = 'admin'")
         .fetch_optional(pool)
@@ -90,11 +90,10 @@ pub async fn init_admin_user(pool: &DbPool) -> Result<(), String> {
         return Ok(());
     }
 
-    // 创建 admin 用户，默认密码为 admin123
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
     let password_hash = argon2
-        .hash_password("admin123".as_bytes(), &salt)
+        .hash_password(password.as_bytes(), &salt)
         .map_err(|e| format!("Failed to hash password: {}", e))?;
 
     let now = chrono::Utc::now().naive_utc();
@@ -110,7 +109,7 @@ pub async fn init_admin_user(pool: &DbPool) -> Result<(), String> {
     .await
     .map_err(|e| format!("Failed to create admin user: {}", e))?;
 
-    info!("Admin user created successfully. Default password: admin123");
+    info!("Admin user created successfully.");
     info!("Please change the password after first login!");
     Ok(())
 }

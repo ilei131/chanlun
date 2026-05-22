@@ -26,6 +26,9 @@ pub struct Config {
     // Data Collector
     pub data_cache_dir: String,
     pub history_start_date: String,
+
+    // Admin
+    pub admin_default_password: String,
 }
 
 impl Config {
@@ -51,15 +54,16 @@ impl Config {
 
             api_prefix: env::var("API_PREFIX").unwrap_or_else(|_| "/api/v1".to_string()),
 
-            tushare_token: env::var("TUSHARE_TOKEN")
-                .unwrap_or_else(|_| "".to_string()),
-            tushare_app_id: env::var("TUSHARE_APP_ID")
-                .unwrap_or_else(|_| "".to_string()),
+            tushare_token: env::var("TUSHARE_TOKEN").unwrap_or_else(|_| "".to_string()),
+            tushare_app_id: env::var("TUSHARE_APP_ID").unwrap_or_else(|_| "".to_string()),
 
             data_cache_dir: env::var("DATA_CACHE_DIR")
                 .unwrap_or_else(|_| "./data_cache".to_string()),
             history_start_date: env::var("HISTORY_START_DATE")
                 .unwrap_or_else(|_| "20100101".to_string()),
+
+            admin_default_password: env::var("ADMIN_DEFAULT_PASSWORD")
+                .unwrap_or_else(|_| "admin123".to_string()),
         })
     }
 

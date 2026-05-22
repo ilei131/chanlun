@@ -1,13 +1,14 @@
 // src/api/stocks.rs
 use actix_web::{web, HttpResponse, Scope};
 use chrono::{NaiveDate, NaiveDateTime};
-use log::{debug, info};
+use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
 
 use crate::algorithms::czsc_integration::{self, ChanlunAnalyzer};
-use crate::db::models::{Kline, NewStock, Stock};
+use crate::cache::KlineCache;
+use crate::db::models::{NewStock, Stock};
 use crate::tushare::client::TushareClient;
 use crate::api::auth::JwtClaims;
 use czsc_core::objects::bar::RawBar;
@@ -316,6 +317,7 @@ async fn get_stock_detail(
 
     let ts_code = TushareClient::convert_ts_code(code);
     let stock_code = ts_code.split('.').next().unwrap_or(code);
+
     let market = if ts_code.ends_with(".SH") {
         "SH"
     } else if ts_code.ends_with(".BJ") {
@@ -334,7 +336,11 @@ async fn get_stock_detail(
     let claims = extract_claims(&req).await;
     let client = get_tushare_client(claims.as_ref());
     
-    let (stock, name, list_date, stock_type, mut kline_data) = match sqlx::query_as::<_, Stock>(
+    let cache = KlineCache::new("./data_cache", 500, 7);
+    
+    let mut kline_data = cache.get(stock_code, period);
+    
+    let (_stock, name, list_date, stock_type) = match sqlx::query_as::<_, Stock>(
         "SELECT id, code, name, market, stock_type, list_date, delist_date, is_active, created_at, updated_at
          FROM stocks WHERE code = $1 AND market = $2 AND is_active = true"
     )
@@ -362,40 +368,6 @@ async fn get_stock_detail(
             } else {
                 default_start_date.clone()
             };
-            let start_naive_date = NaiveDate::parse_from_str(&start_date_str, "%Y%m%d").unwrap();
-            let end_naive_date = NaiveDate::parse_from_str(&end_date, "%Y%m%d").unwrap();
-            
-            let klines: Result<Vec<Kline>, sqlx::Error> = sqlx::query_as::<_, Kline>(
-                "SELECT id, stock_id, trade_date, period, open, high, low, close, volume, amount, turnover_rate, created_at
-                 FROM klines WHERE stock_id = $1 AND period = $2 AND trade_date BETWEEN $3 AND $4
-                 ORDER BY trade_date ASC"
-            )
-            .bind(stock.id)
-            .bind(period)
-            .bind(start_naive_date)
-            .bind(end_naive_date)
-            .fetch_all(pool.get_ref())
-            .await;
-            
-            let db_kline_data: Vec<crate::tushare::client::KlineData> = match klines {
-                Ok(klines) => {
-                    info!("[get_stock_detail] 从本地数据库获取到 {} 条 K 线数据", klines.len());
-                    klines.into_iter().map(|k| crate::tushare::client::KlineData {
-                        ts_code: ts_code.clone(),
-                        trade_date: k.trade_date.format("%Y%m%d").to_string(),
-                        open: k.open,
-                        high: k.high,
-                        low: k.low,
-                        close: k.close,
-                        vol: k.volume as f64,
-                        amount: k.amount,
-                    }).collect()
-                }
-                Err(e) => {
-                    info!("[get_stock_detail] 从本地数据库获取 K 线失败: {}", e);
-                    Vec::new()
-                }
-            };
             
             let list_date_str = stock.list_date.map(|d| d.format("%Y%m%d").to_string());
             let stock_type_str = match market {
@@ -405,22 +377,20 @@ async fn get_stock_detail(
                 _ => Some(stock_type_val),
             };
             
-            (Some(stock), stock_name, list_date_str, stock_type_str, db_kline_data)
+            (Some(stock), stock_name, list_date_str, stock_type_str)
         }
         Ok(None) => {
             info!("[get_stock_detail] 本地数据库未找到股票，将从 Tushare 获取");
-            let empty_kline: Vec<crate::tushare::client::KlineData> = Vec::new();
-            (None, stock_code.to_string(), None, None, empty_kline)
+            (None, stock_code.to_string(), None, None)
         }
         Err(e) => {
             info!("[get_stock_detail] 查询本地数据库失败: {}", e);
-            let empty_kline: Vec<crate::tushare::client::KlineData> = Vec::new();
-            (None, stock_code.to_string(), None, None, empty_kline)
+            (None, stock_code.to_string(), None, None)
         }
     };
     
-    if kline_data.is_empty() {
-        info!("[get_stock_detail] 本地 K 线数据为空，从 Tushare 获取");
+    if kline_data.is_none() || kline_data.as_ref().map_or(true, |d| d.is_empty()) {
+        info!("[get_stock_detail] 缓存未命中，从 Tushare 获取 K 线数据");
         let kline_result = client
             .get_kline_data(&ts_code, &start_date_str, &end_date, period)
             .await;
@@ -428,10 +398,8 @@ async fn get_stock_detail(
         kline_data = match kline_result {
             Ok(data) => {
                 info!("[get_stock_detail] 从 Tushare 获取到 {} 条 K 线数据", data.len());
-                if let Some(s) = &stock {
-                    save_kline_data_to_db(&pool, s.id, period, &data).await;
-                }
-                data
+                cache.put(stock_code, period, data.clone());
+                Some(data)
             }
             Err(e) => {
                 return Err(actix_web::error::ErrorInternalServerError(format!(
@@ -441,7 +409,11 @@ async fn get_stock_detail(
                 .into());
             }
         };
+    } else {
+        info!("[get_stock_detail] 缓存命中，使用缓存的 {} 条 K 线数据", kline_data.as_ref().unwrap().len());
     }
+    
+    let kline_data = kline_data.unwrap_or_default();
 
     if kline_data.is_empty() {
         return Err(actix_web::error::ErrorNotFound("No kline data found").into());
@@ -613,63 +585,6 @@ async fn get_stock_detail(
     };
 
     Ok(HttpResponse::Ok().json(detail))
-}
-
-async fn save_kline_data_to_db(
-    pool: &PgPool,
-    stock_id: i32,
-    period: &str,
-    kline_data: &[crate::tushare::client::KlineData],
-) {
-    info!("[save_kline_data_to_db] 开始保存 {} 条 K 线数据到数据库", kline_data.len());
-    let mut saved = 0;
-    let mut skipped = 0;
-    
-    for k in kline_data {
-        let trade_date = match NaiveDate::parse_from_str(&k.trade_date, "%Y%m%d") {
-            Ok(d) => d,
-            Err(e) => {
-                info!("[save_kline_data_to_db] 日期解析失败: {}, 跳过", e);
-                continue;
-            }
-        };
-        
-        let existing = sqlx::query(
-            "SELECT id FROM klines WHERE stock_id = $1 AND period = $2 AND trade_date = $3"
-        )
-        .bind(stock_id)
-        .bind(period)
-        .bind(trade_date)
-        .fetch_optional(pool)
-        .await;
-        
-        if let Ok(Some(_)) = existing {
-            skipped += 1;
-            continue;
-        }
-        
-        let result = sqlx::query(
-            "INSERT INTO klines (stock_id, trade_date, period, open, high, low, close, volume, amount) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
-        )
-        .bind(stock_id)
-        .bind(trade_date)
-        .bind(period)
-        .bind(k.open)
-        .bind(k.high)
-        .bind(k.low)
-        .bind(k.close)
-        .bind(k.vol as i64)
-        .bind(k.amount)
-        .execute(pool)
-        .await;
-        
-        if result.is_ok() {
-            saved += 1;
-        }
-    }
-    
-    info!("[save_kline_data_to_db] 保存完成: 新增={}, 跳过={}", saved, skipped);
 }
 
 use std::collections::HashMap;

@@ -3,6 +3,7 @@
 
 pub mod api;
 pub mod algorithms;
+pub mod cache;
 pub mod config;
 pub mod db;
 pub mod tushare;
