@@ -1,6 +1,8 @@
 // src/pages/Login.tsx
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Modal } from 'antd'
+import { CheckCircleOutlined } from '@ant-design/icons'
 import { authApi } from '@/api'
 
 export default function Login() {
@@ -12,6 +14,7 @@ export default function Login() {
     const [email, setEmail] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
+    const [showSuccessModal, setShowSuccessModal] = useState(false)
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -48,8 +51,7 @@ export default function Login() {
             } else {
                 await authApi.register({ username, password, email: email || undefined })
                 setError('')
-                alert('注册成功！请登录。')
-                setIsLogin(true)
+                setShowSuccessModal(true)
                 setPassword('')
                 setConfirmPassword('')
                 setEmail('')
@@ -197,6 +199,41 @@ export default function Login() {
                     </div>
                 </div>
             </div>
+
+            {/* Success Modal */}
+            <Modal
+                open={showSuccessModal}
+                onCancel={() => setShowSuccessModal(false)}
+                footer={null}
+                centered
+                width={360}
+                style={{
+                    background: 'rgba(17, 17, 32, 0.9)',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                }}
+            >
+                <div className="text-center py-4">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4" style={{ background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(20, 184, 166, 0.2) 100%)' }}>
+                        <CheckCircleOutlined className="w-10 h-10" style={{ color: '#22c55e' }} />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">注册成功</h3>
+                    <p className="text-slate-400 text-sm mb-6">恭喜您创建账户成功，请登录</p>
+                    <button
+                        onClick={() => {
+                            setShowSuccessModal(false)
+                            setIsLogin(true)
+                        }}
+                        className="w-full py-3 px-4 rounded-xl font-medium text-white transition-all duration-200"
+                        style={{
+                            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                            boxShadow: '0 10px 25px -5px rgba(99, 102, 241, 0.4)',
+                        }}
+                    >
+                        去登录
+                    </button>
+                </div>
+            </Modal>
         </div>
     )
 }

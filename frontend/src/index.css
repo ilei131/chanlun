@@ -236,6 +236,21 @@ textarea::placeholder {
     border: 1px solid rgba(255, 255, 255, 0.15) !important;
     border-radius: 10px !important;
     color: var(--text-primary) !important;
+    padding: 8px 12px !important;
+    min-height: 44px !important;
+}
+
+.ant-input-password .ant-input {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    height: 28px !important;
+}
+
+.ant-input-password .ant-input:focus {
+    border: none !important;
+    box-shadow: none !important;
 }
 
 /* InputNumber styles */

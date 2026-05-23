@@ -67,6 +67,14 @@ impl KlineCache {
         morning_trading || afternoon_trading
     }
 
+    /// 判断当前日期是否为交易日（周末不交易）
+    fn is_trading_day(&self) -> bool {
+        let now = Local::now();
+        let weekday = now.format("%w").to_string().parse::<u32>().unwrap_or(0);
+        // 0 = 周日, 6 = 周六
+        weekday > 0 && weekday < 6
+    }
+
     /// 判断当前是否处于开盘前（9:30之前）
     fn is_pre_market(&self) -> bool {
         let now = Local::now();
@@ -117,9 +125,9 @@ impl KlineCache {
             return true;
         }
 
-        // 如果是新的交易日，需要刷新
+        // 如果是新的交易日，需要刷新（非周末才检查）
         let current_trade_date = self.get_current_trade_date();
-        if !entry.last_trade_date.is_empty() && current_trade_date > entry.last_trade_date {
+        if self.is_trading_day() && !entry.last_trade_date.is_empty() && current_trade_date > entry.last_trade_date {
             info!(
                 "Cache expired due to new trading day: current={}, cache={}",
                 current_trade_date, entry.last_trade_date
@@ -147,9 +155,10 @@ impl KlineCache {
 
     pub fn get(&self, stock_code: &str, period: &str) -> Option<Vec<KlineData>> {
         let cache_file = self.get_cache_file(stock_code, period);
+        info!("Cache check: stock_code={}, period={}, file={:?}", stock_code, period, cache_file);
 
         if !cache_file.exists() {
-            info!("Cache miss: {} {}", stock_code, period);
+            info!("Cache miss: file doesn't exist");
             return None;
         }
 
@@ -168,6 +177,9 @@ impl KlineCache {
                 return None;
             }
         };
+
+        info!("Cache entry loaded: timestamp={}, last_trade_date={}, records={}", 
+              entry.timestamp, entry.last_trade_date, entry.data.len());
 
         // 判断是否需要刷新缓存
         if self.should_refresh_cache(&entry) {
@@ -198,20 +210,25 @@ impl KlineCache {
     }
 
     pub fn put(&self, stock_code: &str, period: &str, data: Vec<KlineData>) {
+        info!("Cache put: stock_code={}, period={}, data_len={}", stock_code, period, data.len());
+        
         if data.is_empty() {
+            info!("Cache put skipped: empty data");
             return;
         }
 
         let cache_file = self.get_cache_file(stock_code, period);
+        info!("Cache put: target file={:?}", cache_file);
+        
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
 
-        // 获取最新的交易日期（数据是倒序存储的，最新的在前面）
         let last_trade_date = data
-            .first()
+            .iter()
             .map(|k| k.trade_date.clone())
+            .max()
             .unwrap_or_default();
 
         let entry = CacheEntry {

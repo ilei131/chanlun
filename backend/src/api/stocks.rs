@@ -312,7 +312,12 @@ async fn get_stock_detail(
     body: web::Json<StockDetailRequest>,
 ) -> actix_web::Result<HttpResponse> {
     let code = &body.code;
-    let period = body.period.as_deref().unwrap_or("daily");
+    let period = match body.period.as_deref().unwrap_or("daily") {
+        "daily" => "D",
+        "weekly" => "W",
+        "monthly" => "M",
+        p => p,
+    };
     let days = body.days.unwrap_or(10000);
 
     let ts_code = TushareClient::convert_ts_code(code);
@@ -584,7 +589,11 @@ async fn get_stock_detail(
         },
     };
 
-    Ok(HttpResponse::Ok().json(detail))
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "message": "获取股票详情成功",
+        "data": detail
+    })))
 }
 
 use std::collections::HashMap;

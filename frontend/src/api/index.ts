@@ -6,7 +6,18 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
 const api = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 30000,
+    timeout: 180000, // 3分钟，适应AI报告生成时间
+})
+
+// 请求拦截器：自动添加 Authorization header
+api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token')
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+}, (error) => {
+    return Promise.reject(error)
 })
 
 export interface Stock {
@@ -31,311 +42,119 @@ export interface ScreenerRequest {
 }
 
 export interface ChanlunBuyCondition {
-    enabled: boolean
-    types: string[]
-    require_current: boolean
+    signal_type: string
 }
 
 export interface FractalCondition {
-    enabled: boolean
-    types: string[]
-    periods: string[]
-    require_confirmed: boolean
-    min_quality_score?: number
-    days_within?: number
+    type: string
+    count: number
 }
 
 export interface CrossCondition {
-    enabled: boolean
-    periods: string[]
-    days_within: number
+    type: string
 }
 
 export interface PriceRangeCondition {
-    enabled: boolean
     min: number
     max: number
 }
 
-export interface ScreenerResponse {
-    total: number
-    page: number
-    page_size: number
-    data: ScreenerResult[]
-}
-
 export interface ScreenerResult {
-    stock_id: number
     code: string
     name: string
-    current_price?: number
-    change_pct?: number
-    matched_conditions: MatchedConditions
-    match_count: number
-    match_ratio: number
-}
-
-export interface MatchedConditions {
-    chanlun_buy?: ChanlunBuyMatch
-    fractal?: FractalMatch
-    kdj_cross?: CrossMatch
-    macd_cross?: CrossMatch
-}
-
-export interface ChanlunBuyMatch {
-    types: string[]
-    signal_date: string
-}
-
-export interface FractalMatch {
-    types: string[]
-    fx_date: string
-    quality_score?: number
-}
-
-export interface CrossMatch {
-    periods: string[]
-    latest_cross_date: string
-}
-
-export interface TechnicalIndicator {
-    trade_date: string
+    market: string
     close: number
-    kdj_k: number | null
-    kdj_d: number | null
-    kdj_j: number | null
-    macd_dif: number | null
-    macd_dea: number | null
-    macd_hist: number | null
-    ma5: number | null
-    ma10: number | null
-    ma20: number | null
-    ma30: number | null
-    boll_upper: number | null
-    boll_mid: number | null
-    boll_lower: number | null
+    change: number
+    change_percent: number
+    volume: number
+    features: string[]
 }
 
 export interface KlineData {
-    id: number
-    stock_id: number
-    trade_date: string
-    period: string
+    time: string
     open: number
     high: number
     low: number
     close: number
     volume: number
-    amount: number
 }
 
-export interface SearchResult {
-    stock_id?: number
-    ts_code: string
-    code: string
-    name: string
-    market: string
-    area?: string
-    industry?: string
-    list_date?: string
-}
-
-export interface StockDetailInfo {
-    id: number
-    code: string
-    name: string
-    market: string
-    stock_type: string
-    list_date?: string
-    is_active: boolean
-}
-
-export interface StockDetail {
-    ts_code: string
-    code: string
-    name: string
-    market: string
-    current_price?: number
-    change_pct?: number
-    area?: string
-    industry?: string
-    list_date?: string
-    stock_type?: string
-    kline_data: KlineResponse[]
-    chanlun_signals: ChanlunSignals
-    indicators: TechnicalIndicators
-}
-
-export interface KlineResponse {
-    trade_date: string
-    open: number
-    high: number
-    low: number
-    close: number
-    volume: number
-    amount?: number
-    bi_points: BiPoint[]
-}
-
-export interface BiPoint {
-    position: number
-    direction: string
-    price: number
-    date: string
-}
-
-export interface ChanlunSignals {
-    buy_signals: BuySignalResponse[]
-    zs_list: ZhongShuResponse[]
-    fx_list: FenXingResponse[]
-    bi_list: BiResponse[]
-}
-
-export interface BiResponse {
-    start_date: string
-    end_date: string
-    direction: string
-    price_change: number
-    high: number
-    low: number
-}
-
-export interface BuySignalResponse {
-    signal_type: string
-    date: string
-    price: number
-}
-
-export interface ZhongShuResponse {
-    start_date: string
-    end_date: string
-    zd: number
-    zg: number
-    gg: number
-    dd: number
-    bi_count: number
-    bis: BiResponse[]
-}
-
-export interface FenXingResponse {
-    date: string
-    price: number
-    direction: string
-}
-
-export interface TechnicalIndicators {
-    macd: MacdData[]
-    kdj: KdjData[]
+export interface MaData {
+    ma5: number[]
+    ma10: number[]
+    ma20: number[]
+    ma60: number[]
 }
 
 export interface MacdData {
-    trade_date: string
-    dif: number
-    dea: number
-    hist: number
+    dif: number[]
+    dea: number[]
+    macd: number[]
 }
 
 export interface KdjData {
-    trade_date: string
-    k: number
-    d: number
-    j: number
+    k: number[]
+    d: number[]
+    j: number[]
 }
 
-export const stockApi = {
-    getAll: () => api.get<Stock[]>('/stocks'),
-    getById: (id: number) => api.get<StockDetailInfo>(`/stocks/${id}`),
-    getKlines: (id: number, period: string) => api.get<KlineData[]>(`/stocks/${id}/klines/${period}`),
-    search: (keyword: string) => api.get<SearchResult[]>('/stocks/search', { params: { keyword } }),
-    getDetail: (code: string, period?: string, days?: number) => api.post<StockDetail>('/stocks/detail', { code, period, days }),
+export interface BuySellPoint {
+    time: string
+    price: number
+    type: string
 }
 
-export const indicatorsApi = {
-    getByStock: (stockId: number, period: string) => api.get<TechnicalIndicator[]>(`/indicators/${stockId}/${period}`),
+export interface ZsItem {
+    start: string
+    end: string
+    zg: number
+    zd: number
+    gg: number
+    dd: number
 }
 
-export const screenerApi = {
-    run: (params: ScreenerRequest) => api.post<ScreenerResponse>('/screener/run', params),
+export interface FenXingItem {
+    time: string
+    type: string
+    high: number
+    low: number
 }
 
-// 认证相关接口
-export interface LoginRequest {
-    username: string
-    password: string
-}
-
-export interface RegisterRequest {
-    username: string
-    password: string
-    email?: string
+export interface StockDetail {
+    code: string
+    name: string
+    market: string
+    industry: string
+    list_date: string
+    kline: KlineData[]
+    ma: MaData
+    macd: MacdData
+    kdj: KdjData
+    buy_points: BuySellPoint[]
+    sell_points: BuySellPoint[]
+    zs_list: ZsItem[]
+    fx_list: FenXingItem[]
+    features: string[]
 }
 
 export interface UserInfo {
-    id: number
+    id: string
     username: string
-    email?: string
-    role: string
-    tushare_token?: string
-    gemini_token?: string
-    openai_token?: string
-    preferred_ai_provider?: string
+    email: string
+    tushare_token: string | null
+    gemini_token: string | null
+    openai_token: string | null
+    openai_base_url: string | null
+    openai_model: string | null
+    preferred_ai_provider: string
 }
 
-export interface LoginResponse {
-    token: string
-    user: UserInfo
+export interface ApiResponse<T> {
+    success: boolean
+    message: string
+    data: T | null
 }
 
-const getAuthHeaders = () => {
-    const token = localStorage.getItem('token')
-    return token ? { Authorization: `Bearer ${token}` } : {}
-}
-
-export const authApi = {
-    login: (data: LoginRequest) =>
-        api.post<LoginResponse>('/auth/login', data),
-
-    register: (data: RegisterRequest) =>
-        api.post('/auth/register', data),
-
-    getCurrentUser: () =>
-        api.get<UserInfo>('/auth/me', { headers: getAuthHeaders() }),
-
-    logout: () => {
-        localStorage.removeItem('token')
-        localStorage.removeItem('user')
-    },
-
-    getUser: (): UserInfo | null => {
-        const userStr = localStorage.getItem('user')
-        if (!userStr || userStr === 'undefined' || userStr === 'null') {
-            return null
-        }
-        try {
-            return JSON.parse(userStr)
-        } catch {
-            return null
-        }
-    },
-
-    isAuthenticated: (): boolean => {
-        return !!localStorage.getItem('token')
-    },
-
-    updateTushareToken: (token: string) =>
-        api.put('/auth/tushare-token', { tushare_token: token }, { headers: getAuthHeaders() }),
-
-    deleteTushareToken: () =>
-        api.delete('/auth/tushare-token', { headers: getAuthHeaders() }),
-
-    updateAiToken: (data: { gemini_token?: string; openai_token?: string; preferred_ai_provider?: string }) =>
-        api.put('/auth/ai-token', data, { headers: getAuthHeaders() }),
-
-    deleteAiToken: () =>
-        api.delete('/auth/ai-token', { headers: getAuthHeaders() }),
-}
-
-// 分析报告相关接口
 export interface StockAnalysisReport {
     id: number
     user_id: number
@@ -355,28 +174,150 @@ export interface StockAnalysisReport {
     updated_at: string
 }
 
+const stocks = {
+    search: async (keyword: string): Promise<ApiResponse<Stock[]>> => {
+        const response = await api.get('/stocks/search', { params: { keyword } })
+        return response.data
+    },
+
+    getDetail: async (code: string, market: string, days?: number): Promise<ApiResponse<StockDetail>> => {
+        const response = await api.post('/stocks/detail', { code, period: market, days })
+        return response.data
+    },
+
+    screener: async (request: ScreenerRequest): Promise<ApiResponse<{ results: ScreenerResult[], total: number }>> => {
+        const response = await api.post('/stocks/screener', request)
+        return response.data
+    },
+}
+
+const auth = {
+    login: async (params: { username: string; password: string }): Promise<ApiResponse<{ token: string, user: UserInfo }>> => {
+        const response = await api.post('/auth/login', params)
+        return response.data
+    },
+
+    register: async (params: { username: string; password: string; email?: string }): Promise<ApiResponse<UserInfo>> => {
+        const response = await api.post('/auth/register', params)
+        return response.data
+    },
+
+    logout: () => {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+    },
+
+    getProfile: async (): Promise<ApiResponse<UserInfo>> => {
+        const response = await api.get('/auth/profile')
+        return response.data
+    },
+
+    updateAiToken: async (
+        tushare_token: string,
+        gemini_token: string,
+        openai_token: string,
+        openai_base_url: string,
+        openai_model: string,
+        preferred_ai_provider: string
+    ): Promise<ApiResponse<UserInfo>> => {
+        const response = await api.put('/auth/update-ai-token', {
+            tushare_token,
+            gemini_token,
+            openai_token,
+            openai_base_url,
+            openai_model,
+            preferred_ai_provider,
+        })
+        return response.data
+    },
+
+    updatePassword: async (old_password: string, new_password: string): Promise<ApiResponse<UserInfo>> => {
+        const response = await api.put('/auth/update-password', { old_password, new_password })
+        return response.data
+    },
+}
+
+const analysis = {
+    createReport: async (stock_code: string, stock_name: string, market: string): Promise<ApiResponse<{ report_id: number }>> => {
+        const response = await api.post('/analysis/create-report', { stock_code, stock_name, market })
+        return response.data
+    },
+
+    getReport: async (report_id: number): Promise<ApiResponse<StockAnalysisReport>> => {
+        const response = await api.get(`/analysis/report/${report_id}`)
+        return response.data
+    },
+
+    listReports: async (page: number = 1, page_size: number = 10): Promise<ApiResponse<{ reports: StockAnalysisReport[], total: number }>> => {
+        const response = await api.get('/analysis/reports', { params: { page, page_size } })
+        return response.data
+    },
+
+    deleteReport: async (report_id: number): Promise<ApiResponse<null>> => {
+        const response = await api.delete(`/analysis/report/${report_id}`)
+        return response.data
+    },
+}
+
+export const apiClient = {
+    stocks,
+    auth,
+    analysis,
+}
+
+export const stockApi = stocks
+export const screenerApi = {
+    run: stocks.screener
+}
+export const authApi = {
+    ...auth,
+    isAuthenticated: () => {
+        const token = localStorage.getItem('token')
+        return !!token
+    },
+    getUser: () => {
+        const userStr = localStorage.getItem('user')
+        return userStr ? JSON.parse(userStr) : null
+    },
+    updateTushareToken: async (tushare_token: string) => {
+        const response = await api.put('/auth/update-tushare-token', { tushare_token })
+        return response.data
+    },
+    deleteTushareToken: async () => {
+        const response = await api.delete('/auth/tushare-token')
+        return response.data
+    },
+    updateAiToken: async (params: {
+        gemini_token?: string
+        openai_token?: string
+        preferred_ai_provider?: string
+        openai_base_url?: string
+        openai_model?: string
+    }) => {
+        const response = await api.put('/auth/update-ai-token', params)
+        return response.data
+    },
+    deleteAiToken: async () => {
+        const response = await api.delete('/auth/ai-token')
+        return response.data
+    },
+}
+export const analysisApi = {
+    createReport: async (params: { stock_code: string; market: string }): Promise<ApiResponse<{ report_id: number }>> => {
+        const response = await api.post('/analysis/report', params)
+        return response.data
+    },
+    getReports: async (params: { page: number; page_size: number }): Promise<ApiResponse<{ reports: StockAnalysisReport[], total: number }>> => {
+        const response = await api.get('/analysis/reports', { params })
+        return response.data
+    },
+    deleteReport: async (id: number): Promise<ApiResponse<null>> => {
+        const response = await api.delete(`/analysis/report/${id}`)
+        return response.data
+    },
+}
+
 export interface CreateReportRequest {
     stock_code: string
     market?: string
-}
-
-export interface ReportListResponse {
-    reports: StockAnalysisReport[]
-    total: number
-    page: number
-    page_size: number
-}
-
-export const analysisApi = {
-    createReport: (data: CreateReportRequest) =>
-        api.post<{ success: boolean; message: string; report_id?: number }>('/analysis/report', data, { headers: getAuthHeaders() }),
-
-    getReports: (params?: { page?: number; page_size?: number; stock_code?: string }) =>
-        api.get<ReportListResponse>('/analysis/reports', { headers: getAuthHeaders(), params }),
-
-    getReport: (id: number) =>
-        api.get<StockAnalysisReport>(`/analysis/reports/${id}`, { headers: getAuthHeaders() }),
-
-    deleteReport: (id: number) =>
-        api.delete<{ success: boolean; message: string }>(`/analysis/reports/${id}`, { headers: getAuthHeaders() }),
 }

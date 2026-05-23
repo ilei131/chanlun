@@ -144,6 +144,8 @@ pub struct User {
     pub gemini_token: Option<String>,
     pub openai_token: Option<String>,
     pub preferred_ai_provider: Option<String>,
+    pub openai_base_url: Option<String>,
+    pub openai_model: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -181,6 +183,8 @@ pub struct UserInfo {
     pub gemini_token: Option<String>,
     pub openai_token: Option<String>,
     pub preferred_ai_provider: Option<String>,
+    pub openai_base_url: Option<String>,
+    pub openai_model: Option<String>,
 }
 
 /// 分析报告模型

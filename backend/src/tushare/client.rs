@@ -120,7 +120,13 @@ impl TushareClient {
         let status = response.status();
         let body = response.text().await?;
 
-        println!("Tushare API response status: {}, body: {}", status, body);
+        // 只打印响应的前100个字符，避免日志太多
+        let truncated_body = if body.len() > 100 {
+            format!("{}...", &body[..100])
+        } else {
+            body.clone()
+        };
+        info!("Tushare API response status: {}, body: {}", status, truncated_body);
 
         let result: TushareResponse = serde_json::from_str(&body)
             .map_err(|e| TushareError::ApiError(format!("JSON parse error: {}", e)))?;

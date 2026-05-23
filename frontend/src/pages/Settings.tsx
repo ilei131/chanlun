@@ -40,6 +40,8 @@ function SettingsPage() {
                 gemini_token: user?.gemini_token || '',
                 openai_token: user?.openai_token || '',
                 preferred_ai_provider: user?.preferred_ai_provider || 'gemini',
+                openai_base_url: user?.openai_base_url || '',
+                openai_model: user?.openai_model || '',
             })
         } catch (error) {
             console.error('Failed to load tokens:', error)
@@ -94,18 +96,21 @@ function SettingsPage() {
                 gemini_token: values.gemini_token || undefined,
                 openai_token: values.openai_token || undefined,
                 preferred_ai_provider: values.preferred_ai_provider,
+                openai_base_url: values.openai_base_url || undefined,
+                openai_model: values.openai_model || undefined,
             })
             message.success('AI token 更新成功')
             setCurrentGeminiToken(values.gemini_token || '')
             setCurrentOpenaiToken(values.openai_token || '')
             setCurrentProvider(values.preferred_ai_provider)
 
-            // 更新本地存储的用户信息
             const user = authApi.getUser()
             if (user) {
                 user.gemini_token = values.gemini_token || undefined
                 user.openai_token = values.openai_token || undefined
                 user.preferred_ai_provider = values.preferred_ai_provider
+                user.openai_base_url = values.openai_base_url || undefined
+                user.openai_model = values.openai_model || undefined
                 localStorage.setItem('user', JSON.stringify(user))
             }
         } catch (error: any) {
@@ -125,12 +130,13 @@ function SettingsPage() {
             setCurrentProvider('')
             aiForm.resetFields()
 
-            // 更新本地存储的用户信息
             const user = authApi.getUser()
             if (user) {
                 user.gemini_token = undefined
                 user.openai_token = undefined
                 user.preferred_ai_provider = undefined
+                user.openai_base_url = undefined
+                user.openai_model = undefined
                 localStorage.setItem('user', JSON.stringify(user))
             }
         } catch (error: any) {
@@ -528,7 +534,12 @@ function SettingsPage() {
                                 <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
                                     OpenAI Platform
                                 </a>
-                                {' '}获取 OpenAI Token。
+                                {' '}获取 OpenAI Token。{' '}
+                                NVIDIA API 也兼容 OpenAI 接口，可在{' '}
+                                <a href="https://build.nvidia.com/settings/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                                    NVIDIA Build
+                                </a>
+                                {' '}获取 Key 后填入 OpenAI 配置。
                             </p>
                         </div>
 
@@ -584,7 +595,47 @@ function SettingsPage() {
                             name="openai_token"
                         >
                             <Input.Password
-                                placeholder="输入您的 OpenAI API Key"
+                                placeholder="输入您的 OpenAI / NVIDIA API Key"
+                                style={{
+                                    backgroundColor: 'rgba(255,255,255,0.05)',
+                                    borderColor: 'rgba(255,255,255,0.1)',
+                                    color: '#fff',
+                                }}
+                            />
+                        </Form.Item>
+
+                        <Form.Item
+                            label={
+                                <div className="flex items-center gap-2">
+                                    <ApiOutlined className="w-4 h-4 text-orange-400" />
+                                    <span className="text-gray-300">OpenAI Base URL</span>
+                                </div>
+                            }
+                            name="openai_base_url"
+                            extra={<span className="text-xs text-gray-500">默认: https://api.openai.com/v1 | NVIDIA: https://integrate.api.nvidia.com/v1</span>}
+                        >
+                            <Input
+                                placeholder="https://api.openai.com/v1"
+                                style={{
+                                    backgroundColor: 'rgba(255,255,255,0.05)',
+                                    borderColor: 'rgba(255,255,255,0.1)',
+                                    color: '#fff',
+                                }}
+                            />
+                        </Form.Item>
+
+                        <Form.Item
+                            label={
+                                <div className="flex items-center gap-2">
+                                    <SlidersOutlined className="w-4 h-4 text-orange-400" />
+                                    <span className="text-gray-300">OpenAI Model</span>
+                                </div>
+                            }
+                            name="openai_model"
+                            extra={<span className="text-xs text-gray-500">默认: gpt-4o-mini | NVIDIA 示例: nvidia/llama-3.1-nemotron-70b-instruct</span>}
+                        >
+                            <Input
+                                placeholder="gpt-4o-mini"
                                 style={{
                                     backgroundColor: 'rgba(255,255,255,0.05)',
                                     borderColor: 'rgba(255,255,255,0.1)',

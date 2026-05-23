@@ -378,6 +378,14 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_reports_created_at ON stock_analysis_reports(created_at DESC);
         "#,
     },
+    Migration {
+        version: 18,
+        name: "add_openai_config_to_users",
+        sql: r#"
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_base_url VARCHAR(255);
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_model VARCHAR(100);
+        "#,
+    },
 ];
 
 /// 初始化迁移历史表
@@ -492,11 +500,12 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), String> {
                         e
                     );
                     // 如果是重复执行错误，跳过
-                    if e.to_string().contains("already exists") {
+                    if e.to_string().contains("already exists") || e.to_string().contains("must be owner") {
                         info!(
-                            "Statement {}/{} already executed, skipping...",
+                            "Statement {}/{} skipped (already exists or permission denied): {}",
                             idx + 1,
-                            sql_statements.len()
+                            sql_statements.len(),
+                            e
                         );
                     } else {
                         migration_success = false;

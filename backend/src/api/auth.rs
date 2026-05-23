@@ -181,10 +181,13 @@ pub async fn register(pool: web::Data<PgPool>, body: web::Json<RegisterRequest>)
                 gemini_token: user.gemini_token,
                 openai_token: user.openai_token,
                 preferred_ai_provider: user.preferred_ai_provider,
+                openai_base_url: user.openai_base_url,
+                openai_model: user.openai_model,
             };
             HttpResponse::Ok().json(serde_json::json!({
+                "success": true,
                 "message": "注册成功",
-                "user": user_info
+                "data": user_info
             }))
         }
         Err(e) => {
@@ -247,10 +250,16 @@ pub async fn login(pool: web::Data<PgPool>, body: web::Json<LoginRequest>) -> Ht
             gemini_token: user.gemini_token,
             openai_token: user.openai_token,
             preferred_ai_provider: user.preferred_ai_provider,
+            openai_base_url: user.openai_base_url,
+            openai_model: user.openai_model,
         },
     };
 
-    HttpResponse::Ok().json(response)
+    HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "message": "登录成功",
+        "data": response
+    }))
 }
 
 /// 获取当前用户信息
@@ -273,6 +282,8 @@ pub async fn get_current_user(pool: web::Data<PgPool>, claims: JwtClaims) -> Htt
                 gemini_token: u.gemini_token,
                 openai_token: u.openai_token,
                 preferred_ai_provider: u.preferred_ai_provider,
+                openai_base_url: u.openai_base_url,
+                openai_model: u.openai_model,
             };
             HttpResponse::Ok().json(user_info)
         }
@@ -416,6 +427,8 @@ pub struct UpdateAiTokenRequest {
     pub gemini_token: Option<String>,
     pub openai_token: Option<String>,
     pub preferred_ai_provider: Option<String>,
+    pub openai_base_url: Option<String>,
+    pub openai_model: Option<String>,
 }
 
 /// 更新 AI token
@@ -433,12 +446,16 @@ pub async fn update_ai_token(
          SET gemini_token = COALESCE($1, gemini_token), 
              openai_token = COALESCE($2, openai_token),
              preferred_ai_provider = COALESCE($3, preferred_ai_provider),
-             updated_at = $4 
-         WHERE id = $5",
+             openai_base_url = COALESCE($4, openai_base_url),
+             openai_model = COALESCE($5, openai_model),
+             updated_at = $6 
+         WHERE id = $7",
     )
     .bind(&body.gemini_token)
     .bind(&body.openai_token)
     .bind(&body.preferred_ai_provider)
+    .bind(&body.openai_base_url)
+    .bind(&body.openai_model)
     .bind(now)
     .bind(claims.sub)
     .execute(pool.get_ref())
@@ -475,6 +492,8 @@ pub async fn delete_ai_token(pool: web::Data<PgPool>, claims: JwtClaims) -> Http
          SET gemini_token = NULL, 
              openai_token = NULL,
              preferred_ai_provider = NULL,
+             openai_base_url = NULL,
+             openai_model = NULL,
              updated_at = $1 
          WHERE id = $2",
     )

@@ -7,10 +7,12 @@ use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 
 use crate::ai::AiService;
+use crate::algorithms::czsc_integration::{self, ChanlunAnalyzer};
 use crate::api::auth::JwtClaims;
 use crate::cache::KlineCache;
 use crate::db::models::{CreateReportRequest, ReportListResponse, StockAnalysisReport};
 use crate::tushare::client::{KlineData, TushareClient};
+use czsc_core::objects::bar::RawBar;
 
 pub fn routes() -> Scope {
     web::scope("/analysis")
@@ -23,9 +25,9 @@ pub fn routes() -> Scope {
 async fn get_user_tokens(
     pool: &PgPool,
     user_id: i32,
-) -> Result<(Option<String>, Option<String>, Option<String>), String> {
+) -> Result<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>), String> {
     let result = sqlx::query(
-        "SELECT gemini_token, openai_token, preferred_ai_provider FROM users WHERE id = $1",
+        "SELECT gemini_token, openai_token, preferred_ai_provider, openai_base_url, openai_model FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -33,7 +35,7 @@ async fn get_user_tokens(
     .map_err(|e| format!("查询用户Token失败: {}", e))?;
 
     match result {
-        Some(row) => Ok((row.get(0), row.get(1), row.get(2))),
+        Some(row) => Ok((row.get(0), row.get(1), row.get(2), row.get(3), row.get(4))),
         None => Err("用户不存在".to_string()),
     }
 }
@@ -71,7 +73,7 @@ async fn create_report(
         claims.sub, stock_code, market
     );
 
-    let (gemini_token, openai_token, preferred_provider) =
+    let (gemini_token, openai_token, preferred_provider, openai_base_url, openai_model) =
         match get_user_tokens(pool.get_ref(), claims.sub).await {
             Ok(tokens) => tokens,
             Err(e) => {
@@ -102,10 +104,15 @@ async fn create_report(
     };
 
     let cache = KlineCache::new("./data_cache", 500, 7);
-
     let ts_code = format!("{}.{}", stock_code, market);
-    let kline_data = match cache.get(&ts_code, "D") {
-        Some(data) => data,
+
+    let kline_data = match cache.get(stock_code, "D") {
+        Some(data) => {
+            info!("[create_report] 缓存命中，使用缓存的 {} 条 K 线数据", data.len());
+            let mut sorted = data;
+            sorted.reverse();
+            sorted
+        }
         None => {
             info!("[create_report] 缓存未命中，从Tushare获取数据");
             let tushare_client = match claims.tushare_token.clone() {
@@ -113,17 +120,18 @@ async fn create_report(
                 None => TushareClient::new(),
             };
             let today = Local::now().format("%Y%m%d").to_string();
-            let start_date = (Local::now() - chrono::Duration::days(120))
+            let start_date = (Local::now() - chrono::Duration::days(365))
                 .format("%Y%m%d")
                 .to_string();
             match tushare_client
                 .get_kline_data(&ts_code, &start_date, &today, "D")
                 .await
             {
-                Ok(mut data) => {
-                    data.reverse();
-                    cache.put(&ts_code, "D", data.clone());
-                    data
+                Ok(data) => {
+                    cache.put(stock_code, "D", data.clone());
+                    let mut sorted = data;
+                    sorted.reverse();
+                    sorted
                 }
                 Err(e) => {
                     error!("[create_report] 获取K线数据失败: {}", e);
@@ -144,7 +152,8 @@ async fn create_report(
     }
 
     let analysis_date = Local::now().date_naive();
-    let ai_service = AiService::new(gemini_token, openai_token, preferred_provider);
+    let ai_service = AiService::new(gemini_token, openai_token, preferred_provider)
+        .with_openai_config(openai_base_url, openai_model);
     let ai_provider_str = ai_service.get_provider().to_string();
 
     let _ = sqlx::query(
@@ -164,9 +173,9 @@ async fn create_report(
 
     let kline_summary = summarize_kline_data(&kline_data);
     let tech_summary = summarize_technical_indicators(&kline_data);
-    let chanlun_summary = "缠论分析结果：暂无".to_string();
+    let chanlun_summary = summarize_chanlun_signals(&kline_data);
 
-    let report_content = match ai_service
+    let report = match ai_service
         .generate_stock_report(
             stock_code,
             &stock_name,
@@ -177,7 +186,7 @@ async fn create_report(
         )
         .await
     {
-        Ok(content) => content,
+        Ok(report) => report,
         Err(e) => {
             error!("[create_report] AI生成报告失败: {}", e);
             let _ = sqlx::query(
@@ -199,8 +208,8 @@ async fn create_report(
     };
 
     let result = sqlx::query(
-        "INSERT INTO stock_analysis_reports (user_id, stock_code, stock_name, market, analysis_date, ai_provider, report_content, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+        "INSERT INTO stock_analysis_reports (user_id, stock_code, stock_name, market, analysis_date, ai_provider, report_content, summary, investment_rating, target_price, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
     )
     .bind(claims.sub)
     .bind(stock_code)
@@ -208,7 +217,10 @@ async fn create_report(
     .bind(market)
     .bind(analysis_date)
     .bind(&ai_provider_str)
-    .bind(&report_content)
+    .bind(&report.report_content)
+    .bind(&report.summary)
+    .bind(&report.investment_rating)
+    .bind(report.target_price)
     .bind("completed")
     .fetch_one(pool.get_ref())
     .await;
@@ -238,8 +250,8 @@ fn summarize_kline_data(data: &[KlineData]) -> String {
         return "无K线数据".to_string();
     }
 
-    let latest = &data[0];
-    let first = data.last().unwrap();
+    let latest = data.last().unwrap();
+    let first = &data[0];
 
     let mut summary = format!(
         "最新行情：\n- 收盘价: {:.2}\n- 最高价: {:.2}\n- 最低价: {:.2}\n- 开盘价: {:.2}\n- 成交量: {}\n",
@@ -252,6 +264,123 @@ fn summarize_kline_data(data: &[KlineData]) -> String {
         "区间变化：\n- 价格变化: {:.2}\n- 涨跌幅: {:.2}%\n",
         price_change, change_percent
     ));
+
+    let recent_count = data.len().min(20);
+    let recent_data = &data[data.len() - recent_count..];
+    summary.push_str(&format!("\n最近{}日行情：\n", recent_count));
+    for k in recent_data.iter().rev() {
+        let change = k.close - k.open;
+        let change_pct = (change / k.open) * 100.0;
+        summary.push_str(&format!(
+            "- {}: 收盘{:.2} 涨跌{:.2}%\n",
+            k.trade_date, k.close, change_pct
+        ));
+    }
+
+    summary
+}
+
+fn summarize_chanlun_signals(data: &[KlineData]) -> String {
+    if data.len() < 10 {
+        return "数据不足，无法进行缠论分析".to_string();
+    }
+
+    let bars: Vec<RawBar> = data
+        .iter()
+        .enumerate()
+        .map(|(i, k)| {
+            let date = match NaiveDate::parse_from_str(&k.trade_date, "%Y%m%d") {
+                Ok(d) => d,
+                Err(_) => return czsc_integration::convert_to_raw_bar(
+                    &k.ts_code,
+                    chrono::NaiveDateTime::new(
+                        Local::now().date_naive(),
+                        chrono::NaiveTime::default(),
+                    ),
+                    k.open, k.high, k.low, k.close, k.vol, i as i32,
+                ),
+            };
+            let datetime = chrono::NaiveDateTime::new(date, chrono::NaiveTime::default());
+            czsc_integration::convert_to_raw_bar(
+                &k.ts_code, datetime, k.open, k.high, k.low, k.close, k.vol, i as i32,
+            )
+        })
+        .collect();
+
+    let analyzer = ChanlunAnalyzer::new(bars, 50);
+    let signals = analyzer.detect_buy_signals();
+    let bi_list = analyzer.get_bi_list();
+    let zs_list = analyzer.get_zs_list();
+    let fx_list = analyzer.get_fx_list();
+
+    let mut summary = String::new();
+
+    summary.push_str(&format!("分型数量: {}\n", fx_list.len()));
+    let top_count = fx_list.iter().filter(|fx| fx.mark == czsc_core::objects::mark::Mark::G).count();
+    let bottom_count = fx_list.iter().filter(|fx| fx.mark == czsc_core::objects::mark::Mark::D).count();
+    summary.push_str(&format!("- 顶分型: {}, 底分型: {}\n", top_count, bottom_count));
+
+    if let Some(last_fx) = fx_list.last() {
+        let direction = match last_fx.mark {
+            czsc_core::objects::mark::Mark::G => "顶分型",
+            czsc_core::objects::mark::Mark::D => "底分型",
+        };
+        summary.push_str(&format!(
+            "- 最新分型: {} 日期:{} 价格:{:.2}\n",
+            direction,
+            last_fx.dt.format("%Y%m%d"),
+            last_fx.fx
+        ));
+    }
+
+    summary.push_str(&format!("\n笔数量: {}\n", bi_list.len()));
+    for bi in bi_list.iter().rev().take(5) {
+        let direction = match bi.direction {
+            czsc_core::objects::direction::Direction::Up => "向上",
+            czsc_core::objects::direction::Direction::Down => "向下",
+        };
+        summary.push_str(&format!(
+            "- {}笔: {} ~ {} ({:.2} ~ {:.2})\n",
+            direction,
+            bi.start_dt().format("%Y%m%d"),
+            bi.end_dt().format("%Y%m%d"),
+            bi.get_low(),
+            bi.get_high()
+        ));
+    }
+
+    summary.push_str(&format!("\n中枢数量: {}\n", zs_list.len()));
+    for (i, zs) in zs_list.iter().enumerate() {
+        summary.push_str(&format!(
+            "- 中枢{}: {} ~ {} ZD:{:.2} ZG:{:.2} GG:{:.2} DD:{:.2} ({}笔)\n",
+            i + 1,
+            zs.bis[0].start_dt().format("%Y%m%d"),
+            zs.bis.last().unwrap().end_dt().format("%Y%m%d"),
+            zs.zd, zs.zg, zs.gg, zs.dd, zs.bis.len()
+        ));
+    }
+
+    if !signals.is_empty() {
+        summary.push_str("\n买卖点信号:\n");
+        for s in signals.iter().rev().take(10) {
+            let signal_name = match s.signal_type {
+                czsc_integration::BuySignalType::FirstBuy => "一买",
+                czsc_integration::BuySignalType::SecondBuy => "二买",
+                czsc_integration::BuySignalType::ThirdBuy => "三买",
+                czsc_integration::BuySignalType::FirstSell => "一卖",
+                czsc_integration::BuySignalType::SecondSell => "二卖",
+                czsc_integration::BuySignalType::ThirdSell => "三卖",
+            };
+            summary.push_str(&format!(
+                "- {} 日期:{} 价格:{:.2}\n",
+                signal_name,
+                s.date.format("%Y%m%d"),
+                s.price
+            ));
+        }
+    } else {
+        summary.push_str("\n当前无买卖点信号\n");
+    }
 
     summary
 }
