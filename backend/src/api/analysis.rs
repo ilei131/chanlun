@@ -26,17 +26,36 @@ async fn get_user_tokens(
     pool: &PgPool,
     user_id: i32,
 ) -> Result<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>), String> {
+    info!("[get_user_tokens] 查询用户 {} 的Token配置", user_id);
     let result = sqlx::query(
         "SELECT gemini_token, openai_token, preferred_ai_provider, openai_base_url, openai_model FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await
-    .map_err(|e| format!("查询用户Token失败: {}", e))?;
+    .map_err(|e| {
+        error!("[get_user_tokens] 查询失败: {}", e);
+        format!("查询用户Token失败: {}", e)
+    })?;
 
     match result {
-        Some(row) => Ok((row.get(0), row.get(1), row.get(2), row.get(3), row.get(4))),
-        None => Err("用户不存在".to_string()),
+        Some(row) => {
+            let gemini = row.get::<Option<String>, _>(0);
+            let openai = row.get::<Option<String>, _>(1);
+            let provider = row.get::<Option<String>, _>(2);
+            info!(
+                "[get_user_tokens] 用户 {} 查询成功 - Gemini: {}, OpenAI: {}, Provider: {:?}",
+                user_id,
+                gemini.as_ref().map(|_| "已配置").unwrap_or("未配置"),
+                openai.as_ref().map(|_| "已配置").unwrap_or("未配置"),
+                provider
+            );
+            Ok((gemini, openai, provider, row.get(3), row.get(4)))
+        }
+        None => {
+            error!("[get_user_tokens] 用户 {} 不存在", user_id);
+            Err("用户不存在".to_string())
+        }
     }
 }
 
@@ -56,7 +75,26 @@ async fn get_stock_info(
 
     match result {
         Some(row) => Ok((row.get(0), row.get(1))),
-        None => Err(format!("未找到股票: {} {}", stock_code, market)),
+        None => {
+            info!("[get_stock_info] 本地数据库未找到股票 {} {}，尝试从 Tushare 获取", stock_code, market);
+            let tushare_client = TushareClient::new();
+            let search_result = tushare_client.search_stocks(stock_code).await;
+
+            match search_result {
+                Ok(stocks) => {
+                    if let Some(stock) = stocks.into_iter().next() {
+                        info!("[get_stock_info] 从 Tushare 找到股票: {}", stock.name);
+                        Ok((stock.name, None))
+                    } else {
+                        Err(format!("未找到股票: {} {}", stock_code, market))
+                    }
+                }
+                Err(e) => {
+                    error!("[get_stock_info] 从 Tushare 获取股票信息失败: {}", e);
+                    Err(format!("未找到股票: {} {}", stock_code, market))
+                }
+            }
+        }
     }
 }
 
@@ -73,9 +111,13 @@ async fn create_report(
         claims.sub, stock_code, market
     );
 
+    info!("[create_report] 正在获取用户Token...");
     let (gemini_token, openai_token, preferred_provider, openai_base_url, openai_model) =
         match get_user_tokens(pool.get_ref(), claims.sub).await {
-            Ok(tokens) => tokens,
+            Ok(tokens) => {
+                info!("[create_report] 获取用户Token成功");
+                tokens
+            }
             Err(e) => {
                 error!("[create_report] 获取用户Token失败: {}", e);
                 return HttpResponse::InternalServerError().json(json!({
@@ -86,9 +128,10 @@ async fn create_report(
         };
 
     if gemini_token.is_none() && openai_token.is_none() {
+        warn!("[create_report] 用户{}未配置AI API Token", claims.sub);
         return HttpResponse::BadRequest().json(json!({
             "success": false,
-            "message": "请先在设置页面配置AI API Token"
+            "message": "请先在设置页面配置 AI API Key（Gemini 或 OpenAI）才能使用分析功能"
         }));
     }
 
@@ -156,7 +199,23 @@ async fn create_report(
         .with_openai_config(openai_base_url, openai_model);
     let ai_provider_str = ai_service.get_provider().to_string();
 
-    let _ = sqlx::query(
+    let existing = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM stock_analysis_reports WHERE user_id = $1 AND stock_code = $2 AND analysis_date = $3 AND status = 'pending'",
+    )
+    .bind(claims.sub)
+    .bind(stock_code)
+    .bind(analysis_date)
+    .fetch_optional(pool.get_ref())
+    .await;
+
+    if let Ok(Some(_)) = existing {
+        return HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "message": "该股票的分析报告正在生成中，请稍后再试"
+        }));
+    }
+
+    let insert_result = sqlx::query(
         "INSERT INTO stock_analysis_reports (user_id, stock_code, stock_name, market, analysis_date, ai_provider, report_content, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
@@ -170,6 +229,14 @@ async fn create_report(
     .bind("pending")
     .execute(pool.get_ref())
     .await;
+
+    if let Err(e) = insert_result {
+        error!("[create_report] 创建报告记录失败: {}", e);
+        return HttpResponse::InternalServerError().json(json!({
+            "success": false,
+            "message": format!("创建报告记录失败: {}", e)
+        }));
+    }
 
     let kline_summary = summarize_kline_data(&kline_data);
     let tech_summary = summarize_technical_indicators(&kline_data);

@@ -346,7 +346,7 @@ export const analysisApi = {
         return response.data
     },
     deleteReport: async (id: number): Promise<ApiResponse<null>> => {
-        const response = await api.delete(`/analysis/report/${id}`)
+        const response = await api.delete(`/analysis/reports/${id}`)
         return response.data
     },
 }

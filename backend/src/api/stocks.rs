@@ -1,7 +1,7 @@
 // src/api/stocks.rs
 use actix_web::{web, HttpResponse, Scope};
 use chrono::{NaiveDate, NaiveDateTime};
-use log::info;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -320,6 +320,12 @@ async fn get_stock_detail(
     };
     let days = body.days.unwrap_or(10000);
 
+    // 验证股票代码格式
+    if let Err(e) = TushareClient::validate_stock_code(code) {
+        warn!("[get_stock_detail] 股票代码格式验证失败: {}", e);
+        return Err(actix_web::error::ErrorBadRequest(format!("股票代码格式无效: {}", e)).into());
+    }
+
     let ts_code = TushareClient::convert_ts_code(code);
     let stock_code = ts_code.split('.').next().unwrap_or(code);
 
@@ -421,7 +427,18 @@ async fn get_stock_detail(
     let kline_data = kline_data.unwrap_or_default();
 
     if kline_data.is_empty() {
-        return Err(actix_web::error::ErrorNotFound("No kline data found").into());
+        // 检查股票代码前缀是否可能属于北交所但被错误归类
+        let prefix = if stock_code.len() >= 3 { &stock_code[0..3] } else { "" };
+        let bj_prefixes = ["800", "820", "830", "870", "880"];
+        let possible_market = if bj_prefixes.contains(&prefix) {
+            format!(" (注：该股票代码前缀属于北交所，请检查市场是否正确)")
+        } else {
+            "".to_string()
+        };
+        return Err(actix_web::error::ErrorNotFound(format!(
+            "未找到股票 {} 的 K 线数据{}。请检查股票代码是否正确，或该股票是否已上市交易。",
+            ts_code, possible_market
+        )).into());
     }
 
     let mut sorted_data = kline_data.clone();

@@ -43,14 +43,13 @@ function AnalysisReportPage() {
     const loadReports = async () => {
         setLoading(true)
         try {
-            const response = await analysisApi.getReports({
+            const data = await analysisApi.getReports({
                 page: pagination.page,
                 page_size: pagination.pageSize,
             })
-            if (response.data) {
-                const data = response.data
+            if (data.reports) {
                 setReports(data.reports)
-                setPagination(prev => ({ ...prev, total: data.total }))
+                setPagination(prev => ({ ...prev, total: data.total || 0 }))
             }
         } catch (error) {
             console.error('Failed to load reports:', error)
