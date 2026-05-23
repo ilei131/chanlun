@@ -434,25 +434,22 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
                 }
                 prevBarCount = barCount;
             }
-        });
 
-        const handleTimeRangeChange = () => {
-            if (!onVisibleRangeChange) return;
-            const visibleRange = chart.timeScale().getVisibleRange();
-            if (visibleRange) {
-                const startDate = formatTimestamp(visibleRange.from);
-                // 关键修改：始终使用最后一根K线的日期作为结束日期，确保KDJ/MACD最右侧数据对齐
-                const lastBarDate = candleData.length > 0 ? candleData[candleData.length - 1].time : formatTimestamp(visibleRange.to);
-                const endDate = formatTimestamp(lastBarDate);
-                if (startDate && endDate && startDate !== '19700101') {
-                    onVisibleRangeChange({ start: startDate, end: endDate });
+            if (onVisibleRangeChange) {
+                const logicalRange = chart.timeScale().getVisibleLogicalRange();
+                if (logicalRange) {
+                    const startIdx = Math.max(0, Math.floor(logicalRange.from));
+                    const endIdx = Math.min(candleData.length - 1, Math.ceil(logicalRange.to));
+                    if (startIdx >= 0 && endIdx >= startIdx && startIdx < candleData.length) {
+                        const startDate = formatTimestamp(candleData[startIdx].time);
+                        const endDate = formatTimestamp(candleData[endIdx].time);
+                        if (startDate && endDate && startDate !== '19700101' && endDate !== '19700101') {
+                            onVisibleRangeChange({ start: startDate, end: endDate });
+                        }
+                    }
                 }
             }
-        };
-
-        chart.timeScale().subscribeVisibleTimeRangeChange(handleTimeRangeChange);
-
-        handleTimeRangeChange();
+        });
 
         const handleResize = () => {
             if (container) {

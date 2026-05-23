@@ -79,62 +79,96 @@ export interface KlineData {
     volume: number
 }
 
-export interface MaData {
-    ma5: number[]
-    ma10: number[]
-    ma20: number[]
-    ma60: number[]
-}
-
-export interface MacdData {
-    dif: number[]
-    dea: number[]
-    macd: number[]
-}
-
-export interface KdjData {
-    k: number[]
-    d: number[]
-    j: number[]
-}
-
-export interface BuySellPoint {
-    time: string
+export interface BiPoint {
+    position: number
+    direction: string
     price: number
-    type: string
+    date: string
 }
 
-export interface ZsItem {
-    start: string
-    end: string
-    zg: number
-    zd: number
-    gg: number
-    dd: number
+export interface KlineResponse {
+    trade_date: string
+    open: number
+    high: number
+    low: number
+    close: number
+    volume: number
+    amount?: number
+    bi_points: BiPoint[]
 }
 
-export interface FenXingItem {
-    time: string
-    type: string
+export interface MacdPoint {
+    trade_date: string
+    dif: number
+    dea: number
+    hist: number
+}
+
+export interface KdjPoint {
+    trade_date: string
+    k: number
+    d: number
+    j: number
+}
+
+export interface BuySignal {
+    signal_type: string
+    date: string
+    price: number
+}
+
+export interface BiResponse {
+    start_date: string
+    end_date: string
+    direction: string
+    price_change: number
     high: number
     low: number
 }
 
+export interface ZhongShu {
+    start_date: string
+    end_date: string
+    zd: number
+    zg: number
+    gg: number
+    dd: number
+    bi_count: number
+    bis: BiResponse[]
+}
+
+export interface FenXing {
+    date: string
+    price: number
+    direction: string
+}
+
+export interface ChanlunSignals {
+    buy_signals: BuySignal[]
+    zs_list: ZhongShu[]
+    fx_list: FenXing[]
+    bi_list: BiResponse[]
+}
+
+export interface TechnicalIndicators {
+    macd: MacdPoint[]
+    kdj: KdjPoint[]
+}
+
 export interface StockDetail {
+    ts_code: string
     code: string
     name: string
     market: string
-    industry: string
-    list_date: string
-    kline: KlineData[]
-    ma: MaData
-    macd: MacdData
-    kdj: KdjData
-    buy_points: BuySellPoint[]
-    sell_points: BuySellPoint[]
-    zs_list: ZsItem[]
-    fx_list: FenXingItem[]
-    features: string[]
+    current_price?: number
+    change_pct?: number
+    area?: string
+    industry?: string
+    list_date?: string
+    stock_type?: string
+    kline_data: KlineResponse[]
+    chanlun_signals: ChanlunSignals
+    indicators: TechnicalIndicators
 }
 
 export interface UserInfo {
