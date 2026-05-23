@@ -628,7 +628,12 @@ async fn get_reports(
 
     let reports = if let Some(code) = stock_code {
         sqlx::query_as::<_, StockAnalysisReport>(
-            "SELECT * FROM stock_analysis_reports WHERE user_id = $1 AND stock_code = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4"
+            "SELECT id, user_id, stock_code, stock_name, market, analysis_date,
+                    ai_provider, report_content, summary, investment_rating,
+                    target_price::double precision as target_price,
+                    confidence_score::double precision as confidence_score,
+                    status, error_message, created_at, updated_at
+             FROM stock_analysis_reports WHERE user_id = $1 AND stock_code = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4"
         )
         .bind(claims.sub)
         .bind(code)
@@ -638,7 +643,12 @@ async fn get_reports(
         .await
     } else {
         sqlx::query_as::<_, StockAnalysisReport>(
-            "SELECT * FROM stock_analysis_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+            "SELECT id, user_id, stock_code, stock_name, market, analysis_date,
+                    ai_provider, report_content, summary, investment_rating,
+                    target_price::double precision as target_price,
+                    confidence_score::double precision as confidence_score,
+                    status, error_message, created_at, updated_at
+             FROM stock_analysis_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3"
         )
         .bind(claims.sub)
         .bind(page_size)

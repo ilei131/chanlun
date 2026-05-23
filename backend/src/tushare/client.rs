@@ -1,5 +1,5 @@
 // src/tushare/client.rs
-use log::info;
+use log::{info, warn};
 use reqwest::{Client, Error as ReqwestError};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -217,14 +217,65 @@ impl TushareClient {
         self.call_api("daily_basic", &params).await
     }
 
+    /// 将股票代码转换为 Tushare 格式
+    /// 
+    /// # 参数
+    /// - code: 股票代码（如 "600519" 或 "000001.SZ"）
+    /// 
+    /// # 返回值
+    /// - 标准 Tushare 格式代码，如 "600519.SH" 或 "000001.SZ"
+    /// 
+    /// # 说明
+    /// 根据股票代码前缀判断市场：
+    /// - 沪市：以 6 或 9 开头
+    /// - 深市：其他情况（默认）
+    /// - 北交所：以 8 开头
     pub fn convert_ts_code(code: &str) -> String {
         if code.contains('.') {
             code.to_string()
         } else if code.starts_with('6') || code.starts_with('9') {
             format!("{}.SH", code)
+        } else if code.starts_with('8') {
+            format!("{}.BJ", code)
         } else {
             format!("{}.SZ", code)
         }
+    }
+
+    /// 验证股票代码格式是否有效
+    /// 
+    /// # 参数
+    /// - code: 股票代码
+    /// 
+    /// # 返回值
+    /// - Ok(()) 表示格式有效
+    /// - Err(String) 包含错误信息
+    pub fn validate_stock_code(code: &str) -> Result<(), String> {
+        let clean_code = if code.contains('.') {
+            code.split('.').next().unwrap_or(code)
+        } else {
+            code
+        };
+
+        // 检查代码长度（通常为 6 位数字）
+        if clean_code.len() != 6 {
+            return Err(format!("股票代码长度必须为6位数字，当前长度: {}", clean_code.len()));
+        }
+
+        // 检查是否全为数字
+        if !clean_code.chars().all(|c| c.is_ascii_digit()) {
+            return Err(format!("股票代码必须全为数字，当前值: {}", clean_code));
+        }
+
+        // 检查股票代码前缀是否常见
+        let prefix = &clean_code[0..3];
+        let valid_prefixes = ["000", "001", "002", "003", "300", "600", "601", "603", "605", "688", "689", "800", "820", "830", "870", "880"];
+        
+        if !valid_prefixes.contains(&prefix) {
+            warn!("股票代码前缀 {} 不常见，请确认代码是否正确。常见前缀: 沪市(600/601/603/605/688/689), 深市(000/001/002/003/300), 北交所(800/820/830/870/880)", prefix);
+        }
+
+        Ok(())
     }
 }
 

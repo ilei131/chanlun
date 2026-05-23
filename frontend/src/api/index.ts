@@ -341,7 +341,7 @@ export const analysisApi = {
         const response = await api.post('/analysis/report', params)
         return response.data
     },
-    getReports: async (params: { page: number; page_size: number }): Promise<ApiResponse<{ reports: StockAnalysisReport[], total: number }>> => {
+    getReports: async (params: { page: number; page_size: number }) => {
         const response = await api.get('/analysis/reports', { params })
         return response.data
     },
