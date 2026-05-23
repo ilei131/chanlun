@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { Spin, Empty } from 'antd';
 import { SearchOutlined, BuildOutlined, EnvironmentOutlined, ApiOutlined, ArrowUpOutlined, DatabaseOutlined, TagOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { stockApi, SearchResult } from '@/api';
+import { stockApi, Stock } from '@/api';
 
 function StockSearch() {
     const [keyword, setKeyword] = useState('');
-    const [results, setResults] = useState<SearchResult[]>([]);
+    const [results, setResults] = useState<Stock[]>([]);
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
@@ -25,10 +25,14 @@ function StockSearch() {
         setLoading(true);
         try {
             const response = await stockApi.search(trimmedValue);
-            if (response.data.length === 1) {
-                navigate(`/stock/${response.data[0].code}`);
+            if (response.data) {
+                if (response.data.length === 1) {
+                    navigate(`/stock/${response.data[0].code}`);
+                } else {
+                    setResults(response.data);
+                }
             } else {
-                setResults(response.data);
+                setResults([]);
             }
         } catch (error) {
             console.error('搜索失败:', error);

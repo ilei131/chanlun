@@ -45,9 +45,13 @@ export default function Login() {
         try {
             if (isLogin) {
                 const response = await authApi.login({ username, password })
-                localStorage.setItem('token', response.data.token)
-                localStorage.setItem('user', JSON.stringify(response.data.user))
-                navigate('/')
+                if (response.data) {
+                    localStorage.setItem('token', response.data.token)
+                    localStorage.setItem('user', JSON.stringify(response.data.user))
+                    navigate('/')
+                } else {
+                    setError('登录失败，请重试')
+                }
             } else {
                 await authApi.register({ username, password, email: email || undefined })
                 setError('')

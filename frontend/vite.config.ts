@@ -10,7 +10,7 @@ export default defineConfig({
         },
     },
     server: {
-        host: '0.0.0.0', // 监听所有网络接口，允许通过 IP 访问
+        host: '0.0.0.0',
         port: 5173,
         proxy: {
             '/api': {
@@ -18,6 +18,24 @@ export default defineConfig({
                 changeOrigin: true,
                 secure: false,
             },
+        },
+    },
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+                    'vendor-antd': ['antd', '@ant-design/icons'],
+                    'vendor-echarts': ['echarts', 'echarts-for-react'],
+                    'vendor-charts': ['lightweight-charts', 'recharts'],
+                },
+            },
+        },
+        chunkSizeWarningLimit: 600,
+    },
+    preview: {
+        headers: {
+            'Cache-Control': 'public, max-age=31536000',
         },
     },
 })

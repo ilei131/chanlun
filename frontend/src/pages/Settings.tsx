@@ -11,6 +11,7 @@ function SettingsPage() {
     const [currentGeminiToken, setCurrentGeminiToken] = useState<string>('')
     const [currentOpenaiToken, setCurrentOpenaiToken] = useState<string>('')
     const [currentProvider, setCurrentProvider] = useState<string>('')
+    const [aiProvider, setAiProvider] = useState<string>('gemini')
     const [loading, setLoading] = useState(false)
 
     // 加载当前用户的 tushare token
@@ -35,6 +36,7 @@ function SettingsPage() {
             }
             if (user?.preferred_ai_provider) {
                 setCurrentProvider(user.preferred_ai_provider)
+                setAiProvider(user.preferred_ai_provider)
             }
             aiForm.setFieldsValue({
                 gemini_token: user?.gemini_token || '',
@@ -563,6 +565,7 @@ function SettingsPage() {
                                     { value: 'gemini', label: 'Gemini' },
                                     { value: 'openai', label: 'OpenAI' },
                                 ]}
+                                onChange={(value) => setAiProvider(value)}
                             />
                         </Form.Item>
 
@@ -574,6 +577,7 @@ function SettingsPage() {
                                 </div>
                             }
                             name="gemini_token"
+                            hidden={aiProvider !== 'gemini'}
                         >
                             <Input.Password
                                 placeholder="输入您的 Gemini API Key"
@@ -593,6 +597,7 @@ function SettingsPage() {
                                 </div>
                             }
                             name="openai_token"
+                            hidden={aiProvider !== 'openai'}
                         >
                             <Input.Password
                                 placeholder="输入您的 OpenAI / NVIDIA API Key"
@@ -613,6 +618,7 @@ function SettingsPage() {
                             }
                             name="openai_base_url"
                             extra={<span className="text-xs text-gray-500">默认: https://api.openai.com/v1 | NVIDIA: https://integrate.api.nvidia.com/v1</span>}
+                            hidden={aiProvider !== 'openai'}
                         >
                             <Input
                                 placeholder="https://api.openai.com/v1"
@@ -633,6 +639,7 @@ function SettingsPage() {
                             }
                             name="openai_model"
                             extra={<span className="text-xs text-gray-500">默认: gpt-4o-mini | NVIDIA 示例: nvidia/llama-3.1-nemotron-70b-instruct</span>}
+                            hidden={aiProvider !== 'openai'}
                         >
                             <Input
                                 placeholder="gpt-4o-mini"

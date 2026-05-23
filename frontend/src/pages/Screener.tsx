@@ -107,8 +107,10 @@ function Screener() {
             request.page_size = pageSize
 
             const response = await screenerApi.run(request)
-            setResults(response.data.data)
-            setTotal(response.data.total)
+            if (response.data) {
+                setResults(response.data.results)
+                setTotal(response.data.total)
+            }
         } catch (error) {
             console.error('筛选失败:', error)
         } finally {

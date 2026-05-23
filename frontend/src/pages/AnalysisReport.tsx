@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Card, Button, Input, Table, message, Modal, Spin, Empty, Tag } from 'antd'
-import { FileTextOutlined, DeleteOutlined, PlayCircleOutlined, CalendarOutlined, CheckCircleOutlined, WarningOutlined, BellOutlined, BarChartOutlined, TagOutlined, ExclamationCircleOutlined, RiseOutlined } from '@ant-design/icons'
+import { FileTextOutlined, DeleteOutlined, PlayCircleOutlined, CalendarOutlined, CheckCircleOutlined, WarningOutlined, BellOutlined, BarChartOutlined, TagOutlined, ExclamationCircleOutlined, RiseOutlined, RightOutlined, ArrowRightOutlined, BulbOutlined, FileDoneOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons'
 import { analysisApi } from '@/api'
 import type { StockAnalysisReport } from '@/api'
 
@@ -32,6 +32,7 @@ function AnalysisReportPage() {
     const [loading, setLoading] = useState(false)
     const [stockInput, setStockInput] = useState<string>('')
     const [isGenerating, setIsGenerating] = useState(false)
+    const [generatingStock, setGeneratingStock] = useState<string>('')
     const [showReportModal, setShowReportModal] = useState(false)
     const [currentReport, setCurrentReport] = useState<StockAnalysisReport | null>(null)
     const [pagination, setPagination] = useState({ page: 1, pageSize: 10, total: 0 })
@@ -81,7 +82,15 @@ function AnalysisReportPage() {
             market = 'SZ'
         }
 
+        const stockKey = `${code}.${market}`
+        
+        if (isGenerating || generatingStock === stockKey) {
+            message.warning('该股票的分析报告正在生成中，请稍后再试')
+            return
+        }
+
         setIsGenerating(true)
+        setGeneratingStock(stockKey)
 
         try {
             const response = await analysisApi.createReport({
@@ -99,6 +108,7 @@ function AnalysisReportPage() {
             message.error(getFriendlyErrorMessage(error.response?.data?.message))
         } finally {
             setIsGenerating(false)
+            setGeneratingStock('')
         }
     }
 
@@ -247,50 +257,245 @@ function AnalysisReportPage() {
     }
 
     const parseReportContent = (content: string) => {
-        return content.split('\n').map((line, index) => {
+        const lines = content.split('\n');
+        const elements = [];
+        let i = 0;
+        
+        while (i < lines.length) {
+            const line = lines[i];
+            
+            // 二级标题
             if (line.startsWith('## ')) {
-                return (
-                    <h2 key={index} className="text-xl font-bold text-indigo-400 mt-6 mb-3 pb-2 border-b border-indigo-900/50">
-                        {line.replace('## ', '')}
-                    </h2>
-                )
+                const title = line.replace('## ', '');
+                const icon = getSectionIcon(title);
+                elements.push(
+                    <div key={i} className="flex items-center gap-3 mt-6 mb-3 pb-2 border-b border-indigo-900/50">
+                        {icon}
+                        <h2 className="text-xl font-bold text-indigo-400">
+                            {title}
+                        </h2>
+                    </div>
+                );
+                i++;
+                continue;
             }
+            
+            // 三级标题
             if (line.startsWith('### ')) {
-                return (
-                    <h3 key={index} className="text-lg font-semibold text-purple-400 mt-4 mb-2">
-                        {line.replace('### ', '')}
+                const title = line.replace('### ', '');
+                elements.push(
+                    <h3 key={i} className="text-lg font-semibold text-purple-400 mt-4 mb-2 flex items-center gap-2">
+                        <RightOutlined className="text-purple-500" />
+                        {title}
                     </h3>
-                )
+                );
+                i++;
+                continue;
             }
+            
+            // 列表项
             if (line.startsWith('- ')) {
-                return (
-                    <div key={index} className="flex items-start gap-2 text-gray-300 ml-4">
-                        <span className="text-indigo-400 mt-1">•</span>
-                        <span>{line.replace('- ', '')}</span>
+                const contentLine = line.replace('- ', '');
+                elements.push(
+                    <div key={i} className="flex items-start gap-2 text-gray-300 ml-4 my-1">
+                        <CheckCircleOutlined className="text-green-400 mt-0.5 flex-shrink-0" />
+                        <span>{contentLine}</span>
                     </div>
-                )
+                );
+                i++;
+                continue;
             }
+            
+            // 加粗文字
             if (line.startsWith('**') && line.endsWith('**')) {
-                return (
-                    <span key={index} className="font-bold text-white">{line.replace(/\*\*/g, '')}</span>
-                )
+                elements.push(
+                    <span key={i} className="font-bold text-white">{line.replace(/\*\*/g, '')}</span>
+                );
+                i++;
+                continue;
             }
+            
+            // 数字列表
             if (line.match(/^\d+\./)) {
-                return (
-                    <div key={index} className="text-gray-300 ml-4 my-1">
-                        {line}
+                const num = line.match(/^\d+/)?.[0];
+                const rest = line.replace(/^\d+\.\s*/, '');
+                elements.push(
+                    <div key={i} className="flex items-start gap-2 text-gray-300 ml-4 my-1">
+                        <span className="text-indigo-400 font-bold">{num}.</span>
+                        <span>{rest}</span>
                     </div>
-                )
+                );
+                i++;
+                continue;
             }
+            
+            // 箭头格式
+            if (line.includes('→')) {
+                const parts = line.split('→');
+                if (parts.length === 2) {
+                    elements.push(
+                        <div key={i} className="flex items-center gap-2 text-gray-300 ml-4 my-1">
+                            <span className="text-gray-500">{parts[0].trim()}</span>
+                            <ArrowRightOutlined className="text-indigo-400" />
+                            <span className="text-white font-medium">{parts[1].trim()}</span>
+                        </div>
+                    );
+                    i++;
+                    continue;
+                }
+            }
+            
+            // 标签格式 【标签】内容
+            if (line.match(/^【.*】/)) {
+                const match = line.match(/^【(.*)】(.*)/);
+                if (match) {
+                    elements.push(
+                        <div key={i} className="flex items-start gap-2 my-2">
+                            <Tag color="blue">{match[1]}</Tag>
+                            <span className="text-gray-300">{match[2]}</span>
+                        </div>
+                    );
+                    i++;
+                    continue;
+                }
+            }
+            
+            // 指标卡片格式 |指标|数值|单位|状态|
+            if (line.startsWith('|') && line.endsWith('|')) {
+                const parts = line.split('|').filter(p => p.trim());
+                if (parts.length >= 2) {
+                    const metric = parts[0].trim();
+                    const value = parts[1].trim();
+                    const unit = parts.length > 2 ? parts[2].trim() : '';
+                    const status = parts.length > 3 ? parts[3].trim() : '';
+                    
+                    let statusColor = '';
+                    let statusBg = '';
+                    if (status.includes('好') || status.includes('强') || status.includes('买入') || status.includes('金叉')) {
+                        statusColor = 'text-green-400';
+                        statusBg = 'bg-green-900/30';
+                    } else if (status.includes('弱') || status.includes('卖出') || status.includes('死叉')) {
+                        statusColor = 'text-red-400';
+                        statusBg = 'bg-red-900/30';
+                    } else {
+                        statusColor = 'text-yellow-400';
+                        statusBg = 'bg-yellow-900/30';
+                    }
+                    
+                    elements.push(
+                        <div key={i} className="flex justify-between items-center bg-gray-800/50 rounded-lg px-4 py-2 my-1">
+                            <span className="text-gray-400 text-sm">{metric}</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-white font-bold">{value}</span>
+                                {unit && <span className="text-gray-500 text-xs">{unit}</span>}
+                                {status && (
+                                    <span className={`${statusColor} ${statusBg} px-2 py-0.5 rounded text-xs`}>
+                                        {status}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    );
+                    i++;
+                    continue;
+                }
+            }
+            
+            // 风险/利好标签
+            if (line.includes('风险') || line.includes('利好')) {
+                const isRisk = line.includes('风险');
+                const icon = isRisk ? (
+                    <WarningOutlined className="text-red-400" />
+                ) : (
+                    <CheckCircleOutlined className="text-green-400" />
+                );
+                const bgColor = isRisk ? 'bg-red-900/30 border-red-800/30' : 'bg-green-900/30 border-green-800/30';
+                const title = isRisk ? '风险提示' : '利好催化';
+                
+                elements.push(
+                    <div key={i} className={`border rounded-xl p-3 mt-2 ${bgColor}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                            {icon}
+                            <span className={`text-sm font-semibold ${isRisk ? 'text-red-400' : 'text-green-400'}`}>
+                                {title}
+                            </span>
+                        </div>
+                        <p className="text-gray-300 text-sm">{line}</p>
+                    </div>
+                );
+                i++;
+                continue;
+            }
+            
+            // 评级标签
+            if (line.includes('评级') || line.includes('建议')) {
+                const match = line.match(/(买入|增持|持有|观望|卖出)/);
+                if (match) {
+                    const rating = match[1];
+                    const style = getRatingStyle(rating);
+                    elements.push(
+                        <div key={i} className="flex items-center gap-3 my-2">
+                            <span className="text-gray-400">{line.replace(rating, '').trim()}</span>
+                            <span className={`px-4 py-1 rounded-lg font-bold ${style.bg} ${style.text}`}>
+                                {rating}
+                            </span>
+                        </div>
+                    );
+                    i++;
+                    continue;
+                }
+            }
+            
+            // 涨跌标签
+            if (line.match(/([\d.]+%)/) && (line.includes('上涨') || line.includes('下跌') || line.includes('涨') || line.includes('跌'))) {
+                const isUp = line.includes('上涨') || (line.includes('涨') && !line.includes('下跌') && !line.includes('跌'));
+                const icon = isUp ? <ArrowUpOutlined className="text-green-400" /> : <ArrowDownOutlined className="text-red-400" />;
+                const color = isUp ? 'text-green-400' : 'text-red-400';
+                elements.push(
+                    <div key={i} className="flex items-center gap-2 text-gray-300 my-1">
+                        {icon}
+                        <span className={color}>{line}</span>
+                    </div>
+                );
+                i++;
+                continue;
+            }
+            
+            // 普通段落
             if (line.trim()) {
-                return (
-                    <p key={index} className="text-gray-300 leading-relaxed my-2">
+                elements.push(
+                    <p key={i} className="text-gray-300 leading-relaxed my-2">
                         {line}
                     </p>
-                )
+                );
             }
-            return null
-        })
+            
+            i++;
+        }
+        
+        return elements;
+    }
+
+    const getSectionIcon = (title: string) => {
+        if (title.includes('行情') || title.includes('走势')) {
+            return <RiseOutlined className="text-green-400" />;
+        }
+        if (title.includes('基本面') || title.includes('财务')) {
+            return <FileTextOutlined className="text-blue-400" />;
+        }
+        if (title.includes('技术面') || title.includes('指标')) {
+            return <BarChartOutlined className="text-purple-400" />;
+        }
+        if (title.includes('风险') || title.includes('提示')) {
+            return <WarningOutlined className="text-amber-400" />;
+        }
+        if (title.includes('建议') || title.includes('策略')) {
+            return <BulbOutlined className="text-yellow-400" />;
+        }
+        if (title.includes('总结') || title.includes('摘要')) {
+            return <FileDoneOutlined className="text-indigo-400" />;
+        }
+        return <TagOutlined className="text-gray-400" />;
     }
 
     return (
@@ -386,6 +591,7 @@ function AnalysisReportPage() {
                         dataSource={reports}
                         columns={columns}
                         rowKey="id"
+                        className="report-table"
                         pagination={{
                             current: pagination.page,
                             pageSize: pagination.pageSize,
@@ -395,7 +601,7 @@ function AnalysisReportPage() {
                             },
                             showSizeChanger: true,
                             pageSizeOptions: ['10', '20', '50'],
-                            showTotal: (total) => `共 ${total} 条记录`,
+                            showTotal: (total) => <span style={{ color: '#94a3b8' }}>共 {total} 条记录</span>,
                         }}
                         style={{ color: '#fff' }}
                         bordered={false}
@@ -405,98 +611,269 @@ function AnalysisReportPage() {
 
             {/* 报告详情弹窗 */}
             <Modal
-                title={
-                    currentReport ? (
-                        <div className="flex items-center gap-2">
-                            <FileTextOutlined className="text-indigo-400" />
-                            <span className="text-white">{currentReport.stock_name} 分析报告</span>
-                        </div>
-                    ) : null
-                }
-                visible={showReportModal}
+                open={showReportModal}
                 onCancel={() => setShowReportModal(false)}
-                width={900}
+                width={window.innerWidth > 768 ? 1000 : '95%'}
                 footer={null}
-                style={{ top: 20 }}
-                bodyStyle={{
-                    background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.98) 100%)',
-                    borderRadius: '16px',
+                centered
+                closable={false}
+                styles={{
+                    body: {
+                        background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+                        padding: 0,
+                    },
+                    header: {
+                        background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
+                        borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+                        padding: '16px 24px',
+                    },
+                    content: {
+                        borderRadius: '16px',
+                        overflow: 'hidden',
+                    },
                 }}
             >
                 {currentReport && (
-                    <div className="space-y-6">
-                        {/* 报告头部信息 */}
-                        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-gray-700">
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2">
-                                    <CalendarOutlined className="text-gray-400" />
-                                    <span className="text-gray-300">分析日期: {currentReport.analysis_date}</span>
+                    <div className="min-h-screen md:min-h-0 relative">
+                        {/* 自定义关闭按钮 */}
+                        <button
+                            onClick={() => setShowReportModal(false)}
+                            className="absolute top-3 right-3 z-50 w-9 h-9 rounded-full bg-slate-700/90 hover:bg-slate-600 flex items-center justify-center transition-all duration-200 group shadow-lg"
+                        >
+                            <svg className="w-4 h-4 text-slate-300 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+
+                        {/* 股票信息头部 */}
+                        <div className="relative px-5 py-6 md:px-8 md:py-8 bg-gradient-to-br from-slate-800/80 via-slate-900/90 to-slate-800/80 border-b border-slate-700/50">
+                            {/* 装饰背景 */}
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div>
+                            <div className="absolute bottom-0 left-0 w-24 h-24 bg-purple-500/10 rounded-full blur-3xl"></div>
+                            
+                            <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                                        <FileTextOutlined className="text-2xl text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl md:text-2xl font-bold text-white tracking-tight">
+                                            {currentReport.stock_name}
+                                        </h2>
+                                        <p className="text-slate-400 text-sm mt-0.5">
+                                            {currentReport.stock_code} · {currentReport.market === 'SH' ? '上海' : '深圳'}证券交易所
+                                        </p>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-gray-400">AI服务商:</span>
-                                    <Tag color="blue">{currentReport.ai_provider}</Tag>
+                                
+                                {/* 状态标签 */}
+                                <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
+                                    currentReport.status === 'completed' 
+                                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                }`}>
+                                    <span className={`w-2 h-2 rounded-full ${
+                                        currentReport.status === 'completed' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+                                    }`}></span>
+                                    {currentReport.status === 'completed' ? '分析完成' : '处理中'}
                                 </div>
                             </div>
+                        </div>
+
+                        {/* 核心数据区域 */}
+                        <div className="px-5 py-5 md:px-8 md:py-6 grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 bg-slate-900/50 border-b border-slate-700/30">
+                            <div className="bg-slate-800/60 rounded-xl p-3 md:p-4">
+                                <div className="flex items-center gap-2 text-slate-400 text-xs md:text-sm mb-1">
+                                    <CalendarOutlined className="text-xs" />
+                                    分析日期
+                                </div>
+                                <p className="text-white font-semibold text-sm md:text-base">{currentReport.analysis_date}</p>
+                            </div>
+                            
+                            <div className="bg-slate-800/60 rounded-xl p-3 md:p-4">
+                                <div className="flex items-center gap-2 text-slate-400 text-xs md:text-sm mb-1">
+                                    <TagOutlined className="text-xs" />
+                                    AI 服务商
+                                </div>
+                                <p className="text-white font-semibold text-sm md:text-base capitalize">{currentReport.ai_provider}</p>
+                            </div>
+                            
                             {currentReport.investment_rating && (
-                                <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-2">
-                                        <TagOutlined className="text-indigo-400" />
-                                        <span className="text-gray-400">投资评级:</span>
-                                        <div className={`px-4 py-2 rounded-lg font-bold ${getRatingStyle(currentReport.investment_rating).bg} ${getRatingStyle(currentReport.investment_rating).text} shadow-lg`}>
-                                            {currentReport.investment_rating}
-                                        </div>
+                                <div className={`rounded-xl p-3 md:p-4 ${getRatingStyle(currentReport.investment_rating).bg}`}>
+                                    <div className="flex items-center gap-2 text-slate-300/80 text-xs md:text-sm mb-1">
+                                        <ArrowUpOutlined className="text-xs" />
+                                        投资评级
                                     </div>
-                                    {currentReport.target_price && (
-                                        <div className="flex items-center gap-2">
-                                            <BarChartOutlined className="text-purple-400" />
-                                            <span className="text-gray-300">目标价: <span className="text-white font-bold">{currentReport.target_price}</span></span>
-                                        </div>
-                                    )}
+                                    <p className={`text-lg md:text-xl font-bold ${getRatingStyle(currentReport.investment_rating).text}`}>
+                                        {currentReport.investment_rating}
+                                    </p>
+                                </div>
+                            )}
+                            
+                            {currentReport.target_price && (
+                                <div className="bg-gradient-to-br from-purple-900/60 to-indigo-900/60 rounded-xl p-3 md:p-4 border border-purple-500/20">
+                                    <div className="flex items-center gap-2 text-slate-300/80 text-xs md:text-sm mb-1">
+                                        <BarChartOutlined className="text-xs" />
+                                        目标价
+                                    </div>
+                                    <p className="text-lg md:text-xl font-bold text-white">
+                                        ¥{currentReport.target_price}
+                                    </p>
                                 </div>
                             )}
                         </div>
 
-                        {/* 报告摘要卡片 */}
+                        {/* 核心观点 */}
                         {currentReport.summary && (
-                            <div className="bg-gradient-to-r from-indigo-900/30 to-purple-900/30 border border-indigo-800/30 rounded-xl p-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <RiseOutlined className="text-indigo-400" />
-                                    <span className="text-sm font-semibold text-indigo-300">核心观点</span>
+                            <div className="px-5 py-5 md:px-8 md:py-6 bg-gradient-to-r from-amber-900/20 via-orange-900/10 to-amber-900/20 border-b border-amber-500/20">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                                        <RiseOutlined className="text-amber-400" />
+                                    </div>
+                                    <h3 className="text-sm font-semibold text-amber-300 uppercase tracking-wider">核心观点</h3>
                                 </div>
-                                <p className="text-gray-200 text-sm leading-relaxed">{currentReport.summary}</p>
+                                <p className="text-slate-200 leading-relaxed text-sm md:text-base pl-10">
+                                    {currentReport.summary}
+                                </p>
                             </div>
                         )}
 
                         {/* 报告内容 */}
-                        <div className="prose prose-invert max-w-none">
-                            {parseReportContent(currentReport.report_content)}
+                        <div className="px-5 py-5 md:px-8 md:py-6 bg-slate-900/30">
+                            <div className="flex items-center gap-2 mb-4">
+                                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+                                    <FileDoneOutlined className="text-indigo-400" />
+                                </div>
+                                <h3 className="text-sm font-semibold text-indigo-300 uppercase tracking-wider">详细分析</h3>
+                            </div>
+                            <div className="prose prose-invert prose-sm md:prose-base max-w-none text-slate-300">
+                                {parseReportContent(currentReport.report_content)}
+                            </div>
                         </div>
 
                         {/* 风险提示 */}
-                        <div className="bg-amber-900/20 border border-amber-800/30 rounded-xl p-4 mt-6">
-                            <div className="flex items-center gap-2 mb-2">
-                                <ExclamationCircleOutlined className="text-amber-500" />
-                                <span className="text-sm font-semibold text-amber-400">风险提示</span>
+                        <div className="px-5 py-4 md:px-8 md:py-5 bg-slate-800/50 border-t border-slate-700/50">
+                            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-900/20 border border-amber-500/20">
+                                <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                                    <ExclamationCircleOutlined className="text-amber-400" />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-semibold text-amber-300 mb-1">风险提示</h4>
+                                    <p className="text-slate-400 text-xs leading-relaxed">
+                                        本报告仅供参考，不构成投资建议。投资有风险，入市需谨慎。报告内容基于历史数据和AI分析，市场存在不确定性，请投资者自行判断。
+                                    </p>
+                                </div>
                             </div>
-                            <p className="text-gray-400 text-xs leading-relaxed">
-                                本报告仅供参考，不构成投资建议。投资有风险，入市需谨慎。
-                                报告内容基于历史数据和AI分析，市场有不确定性，请投资者自行判断。
-                            </p>
                         </div>
 
                         {/* 生成失败信息 */}
                         {currentReport.error_message && (
-                            <div className="bg-red-900/30 border border-red-800/30 rounded-xl p-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <WarningOutlined className="text-red-400" />
-                                    <span className="text-sm font-semibold text-red-400">生成失败</span>
+                            <div className="px-5 py-4 md:px-8 md:py-5 bg-red-900/20 border-t border-red-500/30">
+                                <div className="flex items-start gap-3 p-4 rounded-xl bg-red-900/30 border border-red-500/30">
+                                    <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                                        <WarningOutlined className="text-red-400" />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-red-300 mb-1">生成失败</h4>
+                                        <p className="text-red-200/80 text-xs leading-relaxed">
+                                            {currentReport.error_message}
+                                        </p>
+                                    </div>
                                 </div>
-                                <p className="text-red-300 text-sm">{currentReport.error_message}</p>
                             </div>
                         )}
                     </div>
                 )}
             </Modal>
+
+            <style>{`
+                .report-table .ant-pagination {
+                    color: #94a3b8;
+                    display: flex !important;
+                    align-items: center;
+                    gap: 8px;
+                    height: 100%;
+                }
+                .report-table .ant-pagination * {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .report-table .ant-pagination-item {
+                    background: rgba(51, 65, 85, 0.5);
+                    border-color: rgba(100, 116, 139, 0.3);
+                }
+                .report-table .ant-pagination-item a {
+                    color: #cbd5e1;
+                }
+                .report-table .ant-pagination-item-active {
+                    background: rgba(99, 102, 241, 0.2);
+                    border-color: rgba(99, 102, 241, 0.5);
+                }
+                .report-table .ant-pagination-item-active a {
+                    color: #818cf8;
+                }
+                .report-table .ant-pagination-prev button,
+                .report-table .ant-pagination-next button {
+                    color: #cbd5e1 !important;
+                    background: rgba(51, 65, 85, 0.5);
+                    border-color: rgba(100, 116, 139, 0.3);
+                }
+                .report-table .ant-pagination-prev button:hover,
+                .report-table .ant-pagination-next button:hover {
+                    color: #e2e8f0 !important;
+                    background: rgba(71, 85, 105, 0.6);
+                    border-color: rgba(100, 116, 139, 0.5);
+                }
+                .report-table .ant-pagination-prev .ant-pagination-item-link-icon,
+                .report-table .ant-pagination-next .ant-pagination-item-link-icon {
+                    color: #cbd5e1 !important;
+                }
+                .report-table .ant-pagination-prev .ant-pagination-item-link,
+                .report-table .ant-pagination-next .ant-pagination-item-link {
+                    color: #cbd5e1 !important;
+                }
+                .report-table .ant-pagination-prev .ant-pagination-item-link svg,
+                .report-table .ant-pagination-next .ant-pagination-item-link svg {
+                    fill: #cbd5e1 !important;
+                    color: #cbd5e1 !important;
+                }
+                .report-table .ant-pagination-prev button:disabled,
+                .report-table .ant-pagination-next button:disabled {
+                    color: #475569 !important;
+                    background: rgba(30, 41, 59, 0.5);
+                    border-color: rgba(51, 65, 85, 0.3);
+                }
+                .report-table .ant-pagination-prev button:disabled svg,
+                .report-table .ant-pagination-next button:disabled svg {
+                    fill: #475569 !important;
+                    color: #475569 !important;
+                }
+                .report-table .ant-pagination-jump-prev .ant-pagination-item- container-icon,
+                .report-table .ant-pagination-jump-next .ant-pagination-item-container-icon {
+                    color: #94a3b8;
+                }
+                .report-table .ant-pagination-options {
+                    color: #94a3b8;
+                }
+                .report-table .ant-select-selector {
+                    background: rgba(51, 65, 85, 0.5) !important;
+                    border-color: rgba(100, 116, 139, 0.3) !important;
+                    color: #cbd5e1 !important;
+                }
+                .report-table .ant-select-dropdown {
+                    background: rgba(30, 41, 59, 0.98);
+                }
+                .report-table .ant-select-item {
+                    color: #cbd5e1;
+                }
+                .report-table .ant-select-item-option-selected {
+                    background: rgba(99, 102, 241, 0.2);
+                }
+                .report-table .ant-empty-description {
+                    color: #64748b;
+                }
+            `}</style>
         </div>
     )
 }

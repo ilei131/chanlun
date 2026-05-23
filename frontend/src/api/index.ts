@@ -27,6 +27,8 @@ export interface Stock {
     market: string
     stock_type: string
     is_active: boolean
+    industry?: string
+    area?: string
 }
 
 export interface ScreenerRequest {
@@ -42,19 +44,27 @@ export interface ScreenerRequest {
 }
 
 export interface ChanlunBuyCondition {
-    signal_type: string
+    enabled?: boolean
+    types: string[]
+    require_current?: boolean
 }
 
 export interface FractalCondition {
-    type: string
-    count: number
+    enabled?: boolean
+    types: string[]
+    periods?: string[]
+    require_confirmed?: boolean
+    min_quality_score?: number
 }
 
 export interface CrossCondition {
-    type: string
+    enabled?: boolean
+    periods: string[]
+    days_within?: number
 }
 
 export interface PriceRangeCondition {
+    enabled?: boolean
     min: number
     max: number
 }

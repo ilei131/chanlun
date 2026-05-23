@@ -1,14 +1,22 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import Screener from '@/pages/Screener'
-import StockSearch from '@/pages/StockSearch'
-import StockDetail from '@/pages/StockDetail'
-import Signals from '@/pages/Signals'
-import SettingsPage from '@/pages/Settings'
-import Login from '@/pages/Login'
-import AnalysisReport from '@/pages/AnalysisReport'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { authApi } from '@/api'
 import { Menu, X, User, LogOut, Settings, ChevronDown } from 'lucide-react'
+
+const Screener = lazy(() => import('@/pages/Screener'))
+const StockSearch = lazy(() => import('@/pages/StockSearch'))
+const StockDetail = lazy(() => import('@/pages/StockDetail'))
+const Signals = lazy(() => import('@/pages/Signals'))
+const SettingsPage = lazy(() => import('@/pages/Settings'))
+const Login = lazy(() => import('@/pages/Login'))
+const AnalysisReport = lazy(() => import('@/pages/AnalysisReport'))
+
+const pageLoader = () => {
+    import('@/pages/Screener')
+    import('@/pages/Signals')
+    import('@/pages/AnalysisReport')
+    import('@/pages/Settings')
+}
 
 function App() {
     const location = useLocation()
@@ -17,6 +25,10 @@ function App() {
     const [isMobile, setIsMobile] = useState(false)
     const [user, setUser] = useState<{ username: string; role: string } | null>(null)
     const [checkedAuth, setCheckedAuth] = useState(false)
+
+    useEffect(() => {
+        pageLoader()
+    }, [])
 
     useEffect(() => {
         const checkScreenSize = () => {
@@ -280,15 +292,17 @@ function App() {
 
                 {/* Page Content */}
                 <main className="flex-1 p-4 md:p-6 overflow-auto">
-                    <Routes>
-                        <Route path="/" element={<StockSearch />} />
-                        <Route path="/search" element={<StockSearch />} />
-                        <Route path="/screener" element={<Screener />} />
-                        <Route path="/stock/:code" element={<StockDetail />} />
-                        <Route path="/signals" element={<Signals />} />
-                        <Route path="/reports" element={<AnalysisReport />} />
-                        <Route path="/settings" element={<SettingsPage />} />
-                    </Routes>
+                    <Suspense fallback={null}>
+                        <Routes>
+                            <Route path="/" element={<StockSearch />} />
+                            <Route path="/search" element={<StockSearch />} />
+                            <Route path="/screener" element={<Screener />} />
+                            <Route path="/stock/:code" element={<StockDetail />} />
+                            <Route path="/signals" element={<Signals />} />
+                            <Route path="/reports" element={<AnalysisReport />} />
+                            <Route path="/settings" element={<SettingsPage />} />
+                        </Routes>
+                    </Suspense>
                 </main>
 
                 {/* Footer */}

@@ -208,7 +208,8 @@ async fn create_report(
     .fetch_optional(pool.get_ref())
     .await;
 
-    if let Ok(Some(_)) = existing {
+    if let Ok(Some(existing_id)) = existing {
+        info!("[create_report] 用户{}请求生成股票{}的报告，但已有pending报告(ID: {})，拒绝重复请求", claims.sub, stock_code, existing_id);
         return HttpResponse::BadRequest().json(json!({
             "success": false,
             "message": "该股票的分析报告正在生成中，请稍后再试"
@@ -275,20 +276,16 @@ async fn create_report(
     };
 
     let result = sqlx::query(
-        "INSERT INTO stock_analysis_reports (user_id, stock_code, stock_name, market, analysis_date, ai_provider, report_content, summary, investment_rating, target_price, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
+        "UPDATE stock_analysis_reports SET report_content = $1, summary = $2, investment_rating = $3, target_price = $4, status = $5 WHERE user_id = $6 AND stock_code = $7 AND analysis_date = $8 RETURNING id",
     )
-    .bind(claims.sub)
-    .bind(stock_code)
-    .bind(&stock_name)
-    .bind(market)
-    .bind(analysis_date)
-    .bind(&ai_provider_str)
     .bind(&report.report_content)
     .bind(&report.summary)
     .bind(&report.investment_rating)
     .bind(report.target_price)
     .bind("completed")
+    .bind(claims.sub)
+    .bind(stock_code)
+    .bind(analysis_date)
     .fetch_one(pool.get_ref())
     .await;
 
