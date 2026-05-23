@@ -441,8 +441,10 @@ export default function KlineChart({ kline, ma, buyPoints, sellPoints, zsList, f
             const visibleRange = chart.timeScale().getVisibleRange();
             if (visibleRange) {
                 const startDate = formatTimestamp(visibleRange.from);
-                const endDate = formatTimestamp(visibleRange.to);
-                if (startDate && endDate && startDate !== '19700101' && endDate !== '19700101') {
+                // 关键修改：始终使用最后一根K线的日期作为结束日期，确保KDJ/MACD最右侧数据对齐
+                const lastBarDate = candleData.length > 0 ? candleData[candleData.length - 1].time : formatTimestamp(visibleRange.to);
+                const endDate = formatTimestamp(lastBarDate);
+                if (startDate && endDate && startDate !== '19700101') {
                     onVisibleRangeChange({ start: startDate, end: endDate });
                 }
             }

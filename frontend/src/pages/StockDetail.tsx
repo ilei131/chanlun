@@ -708,7 +708,7 @@ function StockDetail() {
                                 MACD
                             </h3>
                         </div>
-                        {macdData && <MacdChart macd={macdData} visibleDateRange={visibleDateRange} />}
+                        {macdData && <MacdChart macd={macdData} klineDates={kline.map(k => k.date)} visibleDateRange={visibleDateRange} />}
                     </div>
 
                     {/* KDJ Chart */}
@@ -719,7 +719,7 @@ function StockDetail() {
                                 KDJ
                             </h3>
                         </div>
-                        {kdjData && <KdjChart dates={kdjData.dates} kdj={kdjData.kdj} visibleDateRange={visibleDateRange} />}
+                        {kdjData && <KdjChart dates={kdjData.dates} kdj={kdjData.kdj} klineDates={kline.map(k => k.date)} visibleDateRange={visibleDateRange} />}
                     </div>
                 </div>
 

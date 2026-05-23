@@ -19,10 +19,11 @@ interface KdjData {
 interface KdjChartProps {
     dates: string[];
     kdj: KdjData;
+    klineDates?: string[];
     visibleDateRange?: { start: string; end: string } | null;
 }
 
-export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps) {
+export default function KdjChart({ dates, kdj, klineDates, visibleDateRange }: KdjChartProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
@@ -42,6 +43,19 @@ export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps
     const chartData = useMemo(() => {
         if (!dates || dates.length === 0 || !kdj) return [];
 
+        // 使用K线图日期作为主日期数组，确保对齐
+        const mainDates = klineDates && klineDates.length > 0 ? klineDates : dates;
+        
+        // 创建KDJ数据的日期映射
+        const kdjMap = new Map<string, { k: number; d: number; j: number }>();
+        for (let i = 0; i < dates.length; i++) {
+            kdjMap.set(dates[i].replace(/-/g, ''), {
+                k: kdj.k[i] ?? 0,
+                d: kdj.d[i] ?? 0,
+                j: kdj.j[i] ?? 0,
+            });
+        }
+
         let displayDates: string[];
         let displayK: number[];
         let displayD: number[];
@@ -50,16 +64,19 @@ export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps
         if (visibleDateRange) {
             const startDate = visibleDateRange.start.replace(/-/g, '');
             const endDate = visibleDateRange.end.replace(/-/g, '');
+            const lastDate = mainDates[mainDates.length - 1].replace(/-/g, '');
 
             const filtered: { date: string; k: number; d: number; j: number }[] = [];
-            for (let i = 0; i < dates.length; i++) {
-                const itemDate = dates[i].replace(/-/g, '');
-                if (itemDate >= startDate && itemDate <= endDate) {
+            for (let i = 0; i < mainDates.length; i++) {
+                const itemDate = mainDates[i].replace(/-/g, '');
+                // 确保最右侧数据始终显示
+                if (itemDate >= startDate && (itemDate <= endDate || itemDate === lastDate)) {
+                    const kdjData = kdjMap.get(itemDate);
                     filtered.push({
-                        date: dates[i],
-                        k: kdj.k[i] ?? 0,
-                        d: kdj.d[i] ?? 0,
-                        j: kdj.j[i] ?? 0,
+                        date: mainDates[i],
+                        k: kdjData?.k ?? 0,
+                        d: kdjData?.d ?? 0,
+                        j: kdjData?.j ?? 0,
                     });
                 }
             }
@@ -70,11 +87,18 @@ export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps
             displayJ = filtered.map(f => f.j);
         } else {
             const maxPoints = 120;
-            const startIdx = Math.max(0, dates.length - maxPoints);
-            displayDates = dates.slice(startIdx);
-            displayK = kdj.k.slice(startIdx);
-            displayD = kdj.d.slice(startIdx);
-            displayJ = kdj.j.slice(startIdx);
+            const startIdx = Math.max(0, mainDates.length - maxPoints);
+            displayDates = mainDates.slice(startIdx);
+            displayK = [];
+            displayD = [];
+            displayJ = [];
+            for (let i = startIdx; i < mainDates.length; i++) {
+                const itemDate = mainDates[i].replace(/-/g, '');
+                const kdjData = kdjMap.get(itemDate);
+                displayK.push(kdjData?.k ?? 0);
+                displayD.push(kdjData?.d ?? 0);
+                displayJ.push(kdjData?.j ?? 0);
+            }
         }
 
         return displayDates.map((date, i) => ({
@@ -83,7 +107,7 @@ export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps
             d: Number(displayD[i]) || 0,
             j: Number(displayJ[i]) || 0,
         }));
-    }, [dates, kdj, visibleDateRange]);
+    }, [dates, kdj, klineDates, visibleDateRange]);
 
     if (!dates || dates.length === 0 || !kdj) return null;
     if (containerSize.width <= 0 || containerSize.height <= 0) {
@@ -93,20 +117,22 @@ export default function KdjChart({ dates, kdj, visibleDateRange }: KdjChartProps
     return (
         <div ref={containerRef} className="p-4" style={{ height: 250, width: '100%', minWidth: 300, boxSizing: 'border-box' }}>
             <ResponsiveContainer width={containerSize.width} height={containerSize.height - 32} minWidth={300} minHeight={200}>
-                <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3e" />
                     <XAxis
                         dataKey="name"
                         tick={{ fill: '#8b8fa3', fontSize: 10 }}
                         axisLine={{ stroke: '#2a2d3e' }}
                         tickLine={{ stroke: '#2a2d3e' }}
-                        interval={Math.floor(chartData.length / 5)}
+                        tickMargin={10}
+                        interval={Math.floor(chartData.length / 5) - 1}
                     />
                     <YAxis
                         type="number"
                         domain={[-20, 120]}
                         ticks={[0, 20, 40, 60, 80, 100]}
                         allowDataOverflow
+                        orientation="right"
                         tick={{ fill: '#8b8fa3', fontSize: 10 }}
                         axisLine={{ stroke: '#2a2d3e' }}
                         tickLine={{ stroke: '#2a2d3e' }}
