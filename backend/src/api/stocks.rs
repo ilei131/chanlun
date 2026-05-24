@@ -1,15 +1,16 @@
 // src/api/stocks.rs
 use actix_web::{web, HttpResponse, Scope};
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{NaiveDate, NaiveDateTime, Datelike};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
+use std::collections::HashMap;
 
 use crate::algorithms::czsc_integration::{self, ChanlunAnalyzer};
 use crate::cache::KlineCache;
 use crate::db::models::{NewStock, Stock};
-use crate::tushare::client::TushareClient;
+use crate::tushare::client::{TushareClient, KlineData};
 use crate::api::auth::JwtClaims;
 use czsc_core::objects::bar::RawBar;
 
@@ -21,6 +22,98 @@ fn get_tushare_client(claims: Option<&JwtClaims>) -> TushareClient {
         }
     }
     TushareClient::new()
+}
+
+/// 从日线数据生成周线数据
+fn generate_weekly_from_daily(daily_data: &[KlineData]) -> Vec<KlineData> {
+    if daily_data.is_empty() {
+        return Vec::new();
+    }
+
+    // 先按日期排序日线数据（确保从早到晚）
+    let mut sorted_daily: Vec<&KlineData> = daily_data.iter().collect();
+    sorted_daily.sort_by(|a, b| a.trade_date.cmp(&b.trade_date));
+
+    let mut weekly_map: HashMap<String, KlineData> = HashMap::new();
+
+    for kline in sorted_daily {
+        if let Ok(date) = NaiveDate::parse_from_str(&kline.trade_date, "%Y%m%d") {
+            let iso_week = date.iso_week();
+            let week_key = format!("{}_{:02}", iso_week.year(), iso_week.week());
+            let monday = date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+            let monday_str = monday.format("%Y%m%d").to_string();
+
+            if let Some(weekly) = weekly_map.get_mut(&week_key) {
+                // 更新已存在的周线数据
+                weekly.high = weekly.high.max(kline.high);
+                weekly.low = weekly.low.min(kline.low);
+                weekly.close = kline.close;  // 最后一个交易日的收盘价
+                weekly.vol += kline.vol;
+                weekly.amount = weekly.amount.map(|a| a + kline.amount.unwrap_or(0.0)).or(kline.amount);
+            } else {
+                // 创建新的周线数据（使用本周第一个交易日的数据）
+                weekly_map.insert(week_key, KlineData {
+                    ts_code: kline.ts_code.clone(),
+                    trade_date: monday_str,
+                    open: kline.open,     // 第一个交易日的开盘价
+                    high: kline.high,
+                    low: kline.low,
+                    close: kline.close,   // 第一个交易日的收盘价（后续会更新）
+                    vol: kline.vol,
+                    amount: kline.amount,
+                });
+            }
+        }
+    }
+
+    let mut weekly_vec: Vec<KlineData> = weekly_map.into_values().collect();
+    weekly_vec.sort_by(|a, b| a.trade_date.cmp(&b.trade_date));
+    weekly_vec
+}
+
+/// 从日线数据生成月线数据
+fn generate_monthly_from_daily(daily_data: &[KlineData]) -> Vec<KlineData> {
+    if daily_data.is_empty() {
+        return Vec::new();
+    }
+
+    // 先按日期排序日线数据（确保从早到晚）
+    let mut sorted_daily: Vec<&KlineData> = daily_data.iter().collect();
+    sorted_daily.sort_by(|a, b| a.trade_date.cmp(&b.trade_date));
+
+    let mut monthly_map: HashMap<String, KlineData> = HashMap::new();
+
+    for kline in sorted_daily {
+        if let Ok(date) = NaiveDate::parse_from_str(&kline.trade_date, "%Y%m%d") {
+            let month_key = format!("{}_{:02}", date.year(), date.month());
+            let month_first = format!("{}{:02}01", date.year(), date.month());
+
+            if let Some(monthly) = monthly_map.get_mut(&month_key) {
+                // 更新已存在的月线数据
+                monthly.high = monthly.high.max(kline.high);
+                monthly.low = monthly.low.min(kline.low);
+                monthly.close = kline.close;  // 最后一个交易日的收盘价
+                monthly.vol += kline.vol;
+                monthly.amount = monthly.amount.map(|a| a + kline.amount.unwrap_or(0.0)).or(kline.amount);
+            } else {
+                // 创建新的月线数据（使用本月第一个交易日的数据）
+                monthly_map.insert(month_key, KlineData {
+                    ts_code: kline.ts_code.clone(),
+                    trade_date: month_first,
+                    open: kline.open,     // 第一个交易日的开盘价
+                    high: kline.high,
+                    low: kline.low,
+                    close: kline.close,   // 第一个交易日的收盘价（后续会更新）
+                    vol: kline.vol,
+                    amount: kline.amount,
+                });
+            }
+        }
+    }
+
+    let mut monthly_vec: Vec<KlineData> = monthly_map.into_values().collect();
+    monthly_vec.sort_by(|a, b| a.trade_date.cmp(&b.trade_date));
+    monthly_vec
 }
 
 #[derive(Debug, Serialize)]
@@ -410,6 +503,19 @@ async fn get_stock_detail(
             Ok(data) => {
                 info!("[get_stock_detail] 从 Tushare 获取到 {} 条 K 线数据", data.len());
                 cache.put(stock_code, period, data.clone());
+                
+                // 如果获取的是日线数据，异步生成周线和月线数据并缓存
+                if period == "D" {
+                    info!("[get_stock_detail] 异步生成周线和月线数据...");
+                    let weekly_data = generate_weekly_from_daily(&data);
+                    let monthly_data = generate_monthly_from_daily(&data);
+                    
+                    info!("[get_stock_detail] 生成周线数据 {} 条，月线数据 {} 条", weekly_data.len(), monthly_data.len());
+                    
+                    cache.put(stock_code, "W", weekly_data);
+                    cache.put(stock_code, "M", monthly_data);
+                }
+                
                 Some(data)
             }
             Err(e) => {
@@ -613,7 +719,6 @@ async fn get_stock_detail(
     })))
 }
 
-use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
