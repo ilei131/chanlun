@@ -264,7 +264,7 @@ const auth = {
         openai_model: string,
         preferred_ai_provider: string
     ): Promise<ApiResponse<UserInfo>> => {
-        const response = await api.put('/auth/update-ai-token', {
+        const response = await api.put('/auth/ai-token', {
             tushare_token,
             gemini_token,
             openai_token,
@@ -338,7 +338,7 @@ export const authApi = {
         openai_base_url?: string
         openai_model?: string
     }) => {
-        const response = await api.put('/auth/update-ai-token', params)
+        const response = await api.put('/auth/ai-token', params)
         return response.data
     },
     deleteAiToken: async () => {
