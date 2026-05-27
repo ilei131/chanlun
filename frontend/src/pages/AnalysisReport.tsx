@@ -83,7 +83,7 @@ function AnalysisReportPage() {
         }
 
         const stockKey = `${code}.${market}`
-        
+
         if (isGenerating || generatingStock === stockKey) {
             message.warning('该股票的分析报告正在生成中，请稍后再试')
             return
@@ -260,10 +260,10 @@ function AnalysisReportPage() {
         const lines = content.split('\n');
         const elements = [];
         let i = 0;
-        
+
         while (i < lines.length) {
             const line = lines[i];
-            
+
             // 二级标题
             if (line.startsWith('## ')) {
                 const title = line.replace('## ', '');
@@ -279,7 +279,7 @@ function AnalysisReportPage() {
                 i++;
                 continue;
             }
-            
+
             // 三级标题
             if (line.startsWith('### ')) {
                 const title = line.replace('### ', '');
@@ -292,7 +292,7 @@ function AnalysisReportPage() {
                 i++;
                 continue;
             }
-            
+
             // 列表项
             if (line.startsWith('- ')) {
                 const contentLine = line.replace('- ', '');
@@ -305,7 +305,7 @@ function AnalysisReportPage() {
                 i++;
                 continue;
             }
-            
+
             // 加粗文字
             if (line.startsWith('**') && line.endsWith('**')) {
                 elements.push(
@@ -314,7 +314,7 @@ function AnalysisReportPage() {
                 i++;
                 continue;
             }
-            
+
             // 数字列表
             if (line.match(/^\d+\./)) {
                 const num = line.match(/^\d+/)?.[0];
@@ -328,7 +328,7 @@ function AnalysisReportPage() {
                 i++;
                 continue;
             }
-            
+
             // 箭头格式
             if (line.includes('→')) {
                 const parts = line.split('→');
@@ -344,7 +344,7 @@ function AnalysisReportPage() {
                     continue;
                 }
             }
-            
+
             // 标签格式 【标签】内容
             if (line.match(/^【.*】/)) {
                 const match = line.match(/^【(.*)】(.*)/);
@@ -359,7 +359,7 @@ function AnalysisReportPage() {
                     continue;
                 }
             }
-            
+
             // 指标卡片格式 |指标|数值|单位|状态|
             if (line.startsWith('|') && line.endsWith('|')) {
                 const parts = line.split('|').filter(p => p.trim());
@@ -368,7 +368,7 @@ function AnalysisReportPage() {
                     const value = parts[1].trim();
                     const unit = parts.length > 2 ? parts[2].trim() : '';
                     const status = parts.length > 3 ? parts[3].trim() : '';
-                    
+
                     let statusColor = '';
                     let statusBg = '';
                     if (status.includes('好') || status.includes('强') || status.includes('买入') || status.includes('金叉')) {
@@ -381,7 +381,7 @@ function AnalysisReportPage() {
                         statusColor = 'text-yellow-400';
                         statusBg = 'bg-yellow-900/30';
                     }
-                    
+
                     elements.push(
                         <div key={i} className="flex justify-between items-center bg-gray-800/50 rounded-lg px-4 py-2 my-1">
                             <span className="text-gray-400 text-sm">{metric}</span>
@@ -400,7 +400,7 @@ function AnalysisReportPage() {
                     continue;
                 }
             }
-            
+
             // 风险/利好标签
             if (line.includes('风险') || line.includes('利好')) {
                 const isRisk = line.includes('风险');
@@ -411,7 +411,7 @@ function AnalysisReportPage() {
                 );
                 const bgColor = isRisk ? 'bg-red-900/30 border-red-800/30' : 'bg-green-900/30 border-green-800/30';
                 const title = isRisk ? '风险提示' : '利好催化';
-                
+
                 elements.push(
                     <div key={i} className={`border rounded-xl p-3 mt-2 ${bgColor}`}>
                         <div className="flex items-center gap-2 mb-1">
@@ -426,7 +426,7 @@ function AnalysisReportPage() {
                 i++;
                 continue;
             }
-            
+
             // 评级标签
             if (line.includes('评级') || line.includes('建议')) {
                 const match = line.match(/(买入|增持|持有|观望|卖出)/);
@@ -445,7 +445,7 @@ function AnalysisReportPage() {
                     continue;
                 }
             }
-            
+
             // 涨跌标签
             if (line.match(/([\d.]+%)/) && (line.includes('上涨') || line.includes('下跌') || line.includes('涨') || line.includes('跌'))) {
                 const isUp = line.includes('上涨') || (line.includes('涨') && !line.includes('下跌') && !line.includes('跌'));
@@ -460,7 +460,7 @@ function AnalysisReportPage() {
                 i++;
                 continue;
             }
-            
+
             // 普通段落
             if (line.trim()) {
                 elements.push(
@@ -469,10 +469,10 @@ function AnalysisReportPage() {
                     </p>
                 );
             }
-            
+
             i++;
         }
-        
+
         return elements;
     }
 
@@ -587,25 +587,118 @@ function AnalysisReportPage() {
                         }
                     />
                 ) : (
-                    <Table
-                        dataSource={reports}
-                        columns={columns}
-                        rowKey="id"
-                        className="report-table"
-                        pagination={{
-                            current: pagination.page,
-                            pageSize: pagination.pageSize,
-                            total: pagination.total,
-                            onChange: (page, pageSize) => {
-                                setPagination({ page, pageSize, total: pagination.total })
-                            },
-                            showSizeChanger: true,
-                            pageSizeOptions: ['10', '20', '50'],
-                            showTotal: (total) => <span style={{ color: '#94a3b8' }}>共 {total} 条记录</span>,
-                        }}
-                        style={{ color: '#fff' }}
-                        bordered={false}
-                    />
+                    <div>
+                        {/* 桌面端：表格视图 */}
+                        <div className="hidden md:block">
+                            <Table
+                                dataSource={reports}
+                                columns={columns}
+                                rowKey="id"
+                                className="report-table"
+                                pagination={{
+                                    current: pagination.page,
+                                    pageSize: pagination.pageSize,
+                                    total: pagination.total,
+                                    onChange: (page, pageSize) => {
+                                        setPagination({ page, pageSize, total: pagination.total })
+                                    },
+                                    showSizeChanger: true, pageSizeOptions: ['10', '20', '50'],
+                                    showTotal: (total) => <span style={{ color: '#94a3b8' }}>共 {total} 条记录</span>,
+                                }}
+                                style={{ color: '#fff' }}
+                                bordered={false}
+                            />
+                        </div>
+
+                        {/* 移动端：卡片视图 */}
+                        <div className="md:hidden space-y-4">
+                            {reports.map((report) => (
+                                <div
+                                    key={report.id}
+                                    className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50"
+                                >
+                                    {/* 股票信息 */}
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div>
+                                            <div className="font-medium text-white text-lg">{report.stock_name}</div>
+                                            <div className="text-sm text-gray-400">{report.stock_code}.{report.market}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {getStatusIcon(report.status)}
+                                            <span className={`text-sm ${report.status === 'completed' ? 'text-green-400' :
+                                                report.status === 'failed' ? 'text-red-400' : 'text-yellow-400'
+                                                }`}>
+                                                {getStatusText(report.status)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* 其他信息 */}
+                                    <div className="space-y-2 mb-4 text-sm">
+                                        {report.analysis_date && (
+                                            <div className="flex items-center gap-2 text-gray-300">
+                                                <CalendarOutlined className="text-gray-500" />
+                                                <span>分析日期：{report.analysis_date}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-2 text-blue-400">
+                                            <TagOutlined className="text-blue-500" />
+                                            <span>AI服务商：{report.ai_provider}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-gray-400">
+                                            <BellOutlined className="text-gray-500" />
+                                            <span>创建时间：{new Date(report.created_at).toLocaleString('zh-CN')}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* 操作按钮 */}
+                                    <div className="flex gap-3">
+                                        <Button
+                                            type="primary"
+                                            size="small"
+                                            icon={<FileTextOutlined />}
+                                            onClick={() => handleViewReport(report)}
+                                            disabled={report.status !== 'completed'}
+                                            className="flex-1"
+                                        >
+                                            查看
+                                        </Button>
+                                        <Button
+                                            danger
+                                            size="small"
+                                            icon={<DeleteOutlined />}
+                                            onClick={() => handleDeleteReport(report.id)}
+                                            className="flex-1"
+                                        >
+                                            删除
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {/* 移动端分页 */}
+                            <div className="flex justify-center pt-4">
+                                <div className="report-table">
+                                    <Table
+                                        dataSource={[]}
+                                        columns={[]}
+                                        pagination={{
+                                            current: pagination.page,
+                                            pageSize: pagination.pageSize,
+                                            total: pagination.total,
+                                            onChange: (page, pageSize) => {
+                                                setPagination({ page, pageSize, total: pagination.total })
+                                            },
+                                            showSizeChanger: true,
+                                            pageSizeOptions: ['10', '20', '50'],
+                                            showTotal: (total) => <span style={{ color: '#94a3b8' }}>共 {total} 条记录</span>,
+                                        }}
+                                        style={{ display: 'none' }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </Card>
 
@@ -650,7 +743,7 @@ function AnalysisReportPage() {
                             {/* 装饰背景 */}
                             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl"></div>
                             <div className="absolute bottom-0 left-0 w-24 h-24 bg-purple-500/10 rounded-full blur-3xl"></div>
-                            
+
                             <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                                 <div className="flex items-center gap-4">
                                     <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -665,16 +758,14 @@ function AnalysisReportPage() {
                                         </p>
                                     </div>
                                 </div>
-                                
+
                                 {/* 状态标签 */}
-                                <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
-                                    currentReport.status === 'completed' 
-                                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${currentReport.status === 'completed'
+                                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                                         : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                }`}>
-                                    <span className={`w-2 h-2 rounded-full ${
-                                        currentReport.status === 'completed' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
-                                    }`}></span>
+                                    }`}>
+                                    <span className={`w-2 h-2 rounded-full ${currentReport.status === 'completed' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+                                        }`}></span>
                                     {currentReport.status === 'completed' ? '分析完成' : '处理中'}
                                 </div>
                             </div>
@@ -689,15 +780,15 @@ function AnalysisReportPage() {
                                 </div>
                                 <p className="text-white font-semibold text-sm md:text-base">{currentReport.analysis_date}</p>
                             </div>
-                            
+
                             <div className="bg-slate-800/60 rounded-xl p-3 md:p-4">
                                 <div className="flex items-center gap-2 text-slate-400 text-xs md:text-sm mb-1">
                                     <TagOutlined className="text-xs" />
-                                    AI 服务商
+                                    AI服务商
                                 </div>
                                 <p className="text-white font-semibold text-sm md:text-base capitalize">{currentReport.ai_provider}</p>
                             </div>
-                            
+
                             {currentReport.investment_rating && (
                                 <div className={`rounded-xl p-3 md:p-4 ${getRatingStyle(currentReport.investment_rating).bg}`}>
                                     <div className="flex items-center gap-2 text-slate-300/80 text-xs md:text-sm mb-1">
@@ -709,7 +800,7 @@ function AnalysisReportPage() {
                                     </p>
                                 </div>
                             )}
-                            
+
                             {currentReport.target_price && (
                                 <div className="bg-gradient-to-br from-purple-900/60 to-indigo-900/60 rounded-xl p-3 md:p-4 border border-purple-500/20">
                                     <div className="flex items-center gap-2 text-slate-300/80 text-xs md:text-sm mb-1">
@@ -837,41 +928,6 @@ function AnalysisReportPage() {
                 .report-table .ant-pagination-next .ant-pagination-item-link svg {
                     fill: #cbd5e1 !important;
                     color: #cbd5e1 !important;
-                }
-                .report-table .ant-pagination-prev button:disabled,
-                .report-table .ant-pagination-next button:disabled {
-                    color: #475569 !important;
-                    background: rgba(30, 41, 59, 0.5);
-                    border-color: rgba(51, 65, 85, 0.3);
-                }
-                .report-table .ant-pagination-prev button:disabled svg,
-                .report-table .ant-pagination-next button:disabled svg {
-                    fill: #475569 !important;
-                    color: #475569 !important;
-                }
-                .report-table .ant-pagination-jump-prev .ant-pagination-item- container-icon,
-                .report-table .ant-pagination-jump-next .ant-pagination-item-container-icon {
-                    color: #94a3b8;
-                }
-                .report-table .ant-pagination-options {
-                    color: #94a3b8;
-                }
-                .report-table .ant-select-selector {
-                    background: rgba(51, 65, 85, 0.5) !important;
-                    border-color: rgba(100, 116, 139, 0.3) !important;
-                    color: #cbd5e1 !important;
-                }
-                .report-table .ant-select-dropdown {
-                    background: rgba(30, 41, 59, 0.98);
-                }
-                .report-table .ant-select-item {
-                    color: #cbd5e1;
-                }
-                .report-table .ant-select-item-option-selected {
-                    background: rgba(99, 102, 241, 0.2);
-                }
-                .report-table .ant-empty-description {
-                    color: #64748b;
                 }
             `}</style>
         </div>
